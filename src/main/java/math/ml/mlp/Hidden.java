@@ -17,6 +17,7 @@ public class Hidden extends AbstractLayer {
     @Override
     public MatrixF forward(MatrixF input) {
         super.forward(input);
+        // (j x i) * (i x m) + (j x m) = (j x m)
         return weights.times(input).addBroadcastedVectorInplace(biases);
     }
 
