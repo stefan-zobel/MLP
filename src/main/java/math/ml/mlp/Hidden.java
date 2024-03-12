@@ -16,10 +16,7 @@ public class Hidden extends AbstractLayer {
 
     @Override
     public MatrixF forward(MatrixF input) {
-        if (mode == NetworkMode.TRAIN) {
-            // i x m
-            this.input = input;
-        }
+        super.forward(input);
         return weights.times(input).addBroadcastedVectorInplace(biases);
     }
 

@@ -9,6 +9,15 @@ public abstract class AbstractLayer implements Layer {
     private Layer next;
 
     @Override
+    public MatrixF forward(MatrixF input) {
+        if (mode == NetworkMode.TRAIN) {
+            // i x m
+            this.input = input;
+        }
+        return null;
+    }
+
+    @Override
     public Layer nextLayer() {
         return next;
     }
