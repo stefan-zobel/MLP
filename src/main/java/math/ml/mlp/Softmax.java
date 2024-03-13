@@ -3,9 +3,9 @@ package math.ml.mlp;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
-public class Softmax extends AbstractLayer {
+public final class Softmax extends AbstractLayer {
 
-    MatrixF output; // TODO
+    private MatrixF output;
 
     public Softmax() {
     }
