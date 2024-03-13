@@ -42,11 +42,13 @@ public class Softmax extends AbstractLayer {
         for (int col = 0; col < cols; ++col) {
             for (int i = 0; i < rows; ++i) {
                 for (int j = 0; j < rows; ++j) {
-                    if (i != j) {
+                    if (i < j) {
                         float si = output.getUnsafe(i, col);
                         float sj = output.getUnsafe(j, col);
-                        jacobian.setUnsafe(j, i, -si * sj);
-                    } else {
+                        float sij = -si * sj;
+                        jacobian.setUnsafe(j, i, sij);
+                        jacobian.setUnsafe(i, j, sij);
+                    } else if (i == j) {
                         float sii = output.getUnsafe(i, col);
                         jacobian.setUnsafe(i, i, sii * (1.0f - sii));
                     }
