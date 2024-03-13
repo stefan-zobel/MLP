@@ -4,6 +4,11 @@ import net.jamu.matrix.MatrixF;
 
 public interface Layer {
 
+    /**
+     * 
+     * @param input
+     * @return
+     */
     MatrixF forward(MatrixF input);
 
     /**
