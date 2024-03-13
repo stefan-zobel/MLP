@@ -60,5 +60,4 @@ public class Hidden extends AbstractLayer {
         biases.addInplace(-learningRate, avgBiasesGrad);
         return inputErrJacobian;
     }
-
 }

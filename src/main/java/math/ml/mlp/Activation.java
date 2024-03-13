@@ -1,6 +1,6 @@
 package math.ml.mlp;
 
-import math.imsl.GELU;
+import math.dl.GELU;
 import net.jamu.matrix.FFunction;
 import net.jamu.matrix.MatrixF;
 
