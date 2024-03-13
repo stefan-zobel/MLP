@@ -61,6 +61,7 @@ public class Softmax extends AbstractLayer {
             // store it in the corresponding column of gradientsOut
             gradientsOut.setSubmatrixInplace(0, col, oneGrad, 0, 0, rows - 1, 0);
         }
+        output = null;
         return gradientsOut;
     }
 }
