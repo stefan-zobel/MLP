@@ -21,7 +21,5 @@ public interface Layer {
      */
     MatrixF backward(MatrixF grads, float learningRate);
 
-    Layer nextLayer();
-
-    MatrixF input();
+    void setMode(NetworkMode mode);
 }
