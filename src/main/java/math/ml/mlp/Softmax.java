@@ -55,11 +55,11 @@ public final class Softmax extends AbstractLayer {
                 }
             }
             // get the corresponding lossGrads column
-            MatrixF lossGrad = lossGrads.selectConsecutiveColumns(col, col);
+            MatrixF lossGrad = lossGrads.selectColumn(col);
             // compute the gradient for this column
             oneGrad = jacobian.mult(lossGrad, oneGrad);
             // store it in the corresponding column of gradientsOut
-            gradientsOut.setSubmatrixInplace(0, col, oneGrad, 0, 0, rows - 1, 0);
+            gradientsOut.setColumnInplace(col, oneGrad);
         }
         output = null;
         return gradientsOut;
