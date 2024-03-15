@@ -6,12 +6,16 @@ import net.jamu.matrix.MatrixF;
 public class Hidden extends AbstractLayer {
 
     // j x i
-    MatrixF weights;
+    protected final MatrixF weights;
     // j x 1
-    MatrixF biases;
+    protected final MatrixF biases;
 
-    public Hidden() {
-        // TODO ...
+    public Hidden(int in, int out) {
+        int i = in;
+        int j = out;
+        float bound = (float) Math.sqrt(6.0 / (i + j));
+        weights = Matrices.randomUniformF(j, i, -bound, bound);
+        biases = Matrices.createF(j, 1);
     }
 
     @Override
