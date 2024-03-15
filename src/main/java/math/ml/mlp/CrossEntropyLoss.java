@@ -14,7 +14,7 @@ public class CrossEntropyLoss extends AbstractLoss {
     // return gradients
     @Override
     public MatrixF forward(MatrixF prediction) {
-        MatrixF expected = super.forward(prediction);
+        MatrixF expected = getExpectation();
         if (expected == null) {
             return null;
         }

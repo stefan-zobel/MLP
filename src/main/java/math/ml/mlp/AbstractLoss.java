@@ -37,12 +37,10 @@ public class AbstractLoss extends AbstractLayer implements Loss {
      * batch number. Increases the batch number by one if that succeeds, otherwise
      * returns {@code null}.
      * 
-     * @param unused this parameter is not used
      * @return the expected values for the current batch or {@code null} if the
      *         retrieval doesn't succeed
      */
-    @Override
-    public MatrixF forward(MatrixF unused) {
+    public MatrixF getExpectation() {
         MatrixF expected = null;
         if (expectedBatchResultsCallback == null
                 || (expected = expectedBatchResultsCallback.apply(batchNumber)) == null) {
