@@ -4,7 +4,7 @@ import math.dl.GELU;
 import net.jamu.matrix.FFunction;
 import net.jamu.matrix.MatrixF;
 
-public class Activation extends AbstractLayer {
+public class Activation extends AbstractLayer { // TODO: extract base class ?
 
     FFunction fun = GELU::geluF; // TODO
     FFunction deriv = GELU::dgeluF_dx; // TODO

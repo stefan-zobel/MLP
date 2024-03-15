@@ -5,7 +5,7 @@ import net.jamu.matrix.MatrixF;
 public abstract class AbstractLayer implements Layer {
 
     protected MatrixF input;
-    protected NetworkMode mode = NetworkMode.TRAIN;
+    protected NetworkMode mode = NetworkMode.INFER;
 
     @Override
     public MatrixF forward(MatrixF input) {
