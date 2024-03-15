@@ -65,8 +65,18 @@ public class CrossEntropyLoss extends AbstractLoss {
 
     private void computeAccuracy(MatrixF pred, MatrixF expect) {
         if (accuracyCallback != null) {
-            // TODO
+            accuracyCallback.accept(pseudoAccuracy(pred.getArrayUnsafe(), expect.getArrayUnsafe()));
         }
+    }
+
+    private static float pseudoAccuracy(float[] a, float[] b) {
+        double dist = 0.0;
+        for (int i = 0; i < a.length; ++i) {
+            double x = Math.sqrt(a[i]) - Math.sqrt(b[i]);
+            x *= x;
+            dist += x;
+        }
+        return (float) (1.0 - (1.0 / Math.sqrt(2.0)) * Math.sqrt(dist));
     }
 
     private static float log(float x) {
