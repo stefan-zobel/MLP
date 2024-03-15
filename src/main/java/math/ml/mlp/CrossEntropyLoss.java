@@ -3,6 +3,10 @@ package math.ml.mlp;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
+/**
+ * The smaller the cross-entropy, the more similar the two probability
+ * distributions are.
+ */
 public class CrossEntropyLoss extends AbstractLoss {
 
     public CrossEntropyLoss() {
@@ -65,13 +69,20 @@ public class CrossEntropyLoss extends AbstractLoss {
 
     private void computeAccuracy(MatrixF pred, MatrixF expect) {
         if (accuracyCallback != null) {
-            accuracyCallback.accept(pseudoAccuracy(pred.getArrayUnsafe(), expect.getArrayUnsafe()));
+            double accuracy = 0.0;
+            int length = pred.numRows();
+            float[] a = pred.getArrayUnsafe();
+            float[] b = expect.getArrayUnsafe();
+            for (int off = 0; off < length * pred.numColumns(); off += length) {
+                accuracy += pseudoAccuracy(length, a, off, b);
+            }
+            accuracyCallback.accept(accuracy / pred.numColumns());
         }
     }
 
-    private static float pseudoAccuracy(float[] a, float[] b) {
+    private static float pseudoAccuracy(int length, float[] a, int off, float[] b) {
         double dist = 0.0;
-        for (int i = 0; i < a.length; ++i) {
+        for (int i = off; i < off + length; ++i) {
             double x = Math.sqrt(a[i]) - Math.sqrt(b[i]);
             x *= x;
             dist += x;
