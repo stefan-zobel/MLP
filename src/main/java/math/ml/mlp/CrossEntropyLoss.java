@@ -1,5 +1,6 @@
 package math.ml.mlp;
 
+import math.dl.ArrayMaxPos;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -8,6 +9,9 @@ import net.jamu.matrix.MatrixF;
  * distributions are.
  */
 public class CrossEntropyLoss extends AbstractLoss {
+
+    private long ok = 0L;
+    private long total = 0L;
 
     public CrossEntropyLoss() {
     }
@@ -67,17 +71,38 @@ public class CrossEntropyLoss extends AbstractLoss {
         }
     }
 
+//  private void computeAccuracy(MatrixF pred, MatrixF expect) {
+//      if (accuracyCallback != null) {
+//          double accuracy = 0.0;
+//          int length = pred.numRows();
+//          float[] a = pred.getArrayUnsafe();
+//          float[] b = expect.getArrayUnsafe();
+//          for (int off = 0; off < length * pred.numColumns(); off += length) {
+//              accuracy += pseudoAccuracy(length, a, off, b);
+//          }
+//          accuracyCallback.accept(accuracy / pred.numColumns());
+//      }
+//  }
+
     private void computeAccuracy(MatrixF pred, MatrixF expect) {
         if (accuracyCallback != null) {
-            double accuracy = 0.0;
             int length = pred.numRows();
             float[] a = pred.getArrayUnsafe();
             float[] b = expect.getArrayUnsafe();
             for (int off = 0; off < length * pred.numColumns(); off += length) {
-                accuracy += pseudoAccuracy(length, a, off, b);
+                accuracy(length, a, off, b);
             }
-            accuracyCallback.accept(accuracy / pred.numColumns());
         }
+        accuracyCallback.accept(ok / (double) total);
+        ok = 0L;
+        total = 0L;
+    }
+
+    private void accuracy(int length, float[] a, int off, float[] b) {
+        if (ArrayMaxPos.maxPosF(length, off, a) == ArrayMaxPos.maxPosF(length, off, b)) {
+            ++ok;
+        }
+        ++total;
     }
 
     private static float pseudoAccuracy(int length, float[] a, int off, float[] b) {
