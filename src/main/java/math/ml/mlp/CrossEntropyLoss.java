@@ -1,6 +1,5 @@
 package math.ml.mlp;
 
-import math.dl.ArrayMaxPos;
 import math.dl.Hellinger;
 import math.dl.MultiClassAccuracy;
 import net.jamu.matrix.Matrices;
