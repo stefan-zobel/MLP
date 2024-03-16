@@ -1,6 +1,8 @@
 package math.ml.mlp;
 
 import math.dl.ArrayMaxPos;
+import math.dl.Hellinger;
+import math.dl.MultiClassAccuracy;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -10,8 +12,7 @@ import net.jamu.matrix.MatrixF;
  */
 public class CrossEntropyLoss extends AbstractLoss {
 
-    private long ok = 0L;
-    private long total = 0L;
+    private final MultiClassAccuracy accuracy = new MultiClassAccuracy();
 
     public CrossEntropyLoss() {
     }
@@ -71,18 +72,18 @@ public class CrossEntropyLoss extends AbstractLoss {
         }
     }
 
-//  private void computeAccuracy(MatrixF pred, MatrixF expect) {
-//      if (accuracyCallback != null) {
-//          double accuracy = 0.0;
-//          int length = pred.numRows();
-//          float[] a = pred.getArrayUnsafe();
-//          float[] b = expect.getArrayUnsafe();
-//          for (int off = 0; off < length * pred.numColumns(); off += length) {
-//              accuracy += pseudoAccuracy(length, a, off, b);
-//          }
-//          accuracyCallback.accept(accuracy / pred.numColumns());
-//      }
-//  }
+//    private void computeAccuracy(MatrixF pred, MatrixF expect) {
+//        if (accuracyCallback != null) {
+//            double accuracy = 0.0;
+//            int length = pred.numRows();
+//            float[] a = pred.getArrayUnsafe();
+//            float[] b = expect.getArrayUnsafe();
+//            for (int off = 0; off < length * pred.numColumns(); off += length) {
+//                accuracy += Hellinger.similarityF(length, a, off, b);
+//            }
+//            accuracyCallback.accept(accuracy / pred.numColumns());
+//        }
+//    }
 
     private void computeAccuracy(MatrixF pred, MatrixF expect) {
         if (accuracyCallback != null) {
@@ -90,29 +91,11 @@ public class CrossEntropyLoss extends AbstractLoss {
             float[] a = pred.getArrayUnsafe();
             float[] b = expect.getArrayUnsafe();
             for (int off = 0; off < length * pred.numColumns(); off += length) {
-                accuracy(length, a, off, b);
+                accuracy.compareF(length, a, off, b);
             }
         }
-        accuracyCallback.accept(ok / (double) total);
-        ok = 0L;
-        total = 0L;
-    }
-
-    private void accuracy(int length, float[] a, int off, float[] b) {
-        if (ArrayMaxPos.maxPosF(length, off, a) == ArrayMaxPos.maxPosF(length, off, b)) {
-            ++ok;
-        }
-        ++total;
-    }
-
-    private static float pseudoAccuracy(int length, float[] a, int off, float[] b) {
-        double dist = 0.0;
-        for (int i = off; i < off + length; ++i) {
-            double x = Math.sqrt(a[i]) - Math.sqrt(b[i]);
-            x *= x;
-            dist += x;
-        }
-        return (float) (1.0 - (1.0 / Math.sqrt(2.0)) * Math.sqrt(dist));
+        accuracyCallback.accept(accuracy.getAverage());
+        accuracy.reset();
     }
 
     private static float log(float x) {
