@@ -15,7 +15,6 @@
  */
 package math.ml.mlp;
 
-import math.dl.Hellinger;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -83,14 +82,7 @@ public class CrossEntropyLoss extends AbstractLoss {
 
 //    private void computeAccuracy(MatrixF pred, MatrixF expect) {
 //        if (accuracyCallback != null) {
-//            double accuracy = 0.0;
-//            int length = pred.numRows();
-//            float[] a = pred.getArrayUnsafe();
-//            float[] b = expect.getArrayUnsafe();
-//            for (int off = 0; off < length * pred.numColumns(); off += length) {
-//                accuracy += Hellinger.similarityF(length, a, off, b);
-//            }
-//            accuracyCallback.accept(accuracy / pred.numColumns());
+//            accuracyCallback.accept(CategorialHellingerAccuracy.computeAccuracy(pred, expect));
 //        }
 //    }
 
