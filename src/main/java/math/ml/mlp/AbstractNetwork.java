@@ -1,3 +1,18 @@
+/*
+ * Copyright 2024 Stefan Zobel
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package math.ml.mlp;
 
 import java.util.ArrayList;
@@ -39,7 +54,7 @@ public abstract class AbstractNetwork implements TrainableNetwork {
         ListIterator<Layer> it = layers.listIterator(layers.size());
         while (it.hasPrevious()) {
             Layer layer = it.previous();
-            if (layer instanceof Loss) {
+            if (layer instanceof Loss && !(layer instanceof SoftmaxCrossEntropyLoss)) {
                 // a Loss returns the gradient from its forward() method, its backward() method
                 // does nothing
                 continue;
@@ -54,14 +69,15 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     @Override
     public MatrixF infer(MatrixF input) {
         for (Layer layer : layers) {
-            if (layer instanceof Loss) {
+            layer.setMode(NetworkMode.INFER);
+            if (layer instanceof Loss && !(layer instanceof SoftmaxCrossEntropyLoss)) {
                 // a Loss would return the gradient from its forward() method which is not a
                 // prediction, also it may call callbacks which might not have a sensible
-                // implementation if we are doing inference only, so skip this. We assume that a
-                // Loss, if there is any, is always the last layer
+                // implementation if we are doing inference only, so skip this.
+                // SoftmaxCrossEntropyLoss is an exception as it behaves like Softmax in INFER
+                // mode. We assume that a Loss, if there is any, is always the last layer
                 break;
             }
-            layer.setMode(NetworkMode.INFER);
             input = layer.forward(input);
         }
         // this is the prediction of the last layer
