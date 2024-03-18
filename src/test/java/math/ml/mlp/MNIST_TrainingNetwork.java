@@ -46,9 +46,9 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
     private static final int BATCH_SIZE = 200;
     private static final int NUM_BATCHES_PER_EPOCH = 300;
     // 784 x 60_000
-    private static MatrixF IMAGES = Statistics.zscoreInplace(MNIST.getTrainingSetImages()); 
+    private static final MatrixF IMAGES = Statistics.zscoreInplace(MNIST.getTrainingSetImages());
     // 10 x 60_000
-    private static MatrixF EXPECT = MNIST.getTrainingSetLabels();
+    private static final MatrixF EXPECT = MNIST.getTrainingSetLabels();
     private static int epoch = 0;
     private static double epochAccuraciesSum = 0.0;
 
@@ -70,15 +70,21 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         net.add(loss);
 
         final float learningRate = 0.005f;
+        Statistics.shuffleColumnsInplace(IMAGES, 0);
+        Statistics.shuffleColumnsInplace(EXPECT, 0);
 
         for (int i = 0; i <= 12_000; ++i) {
             int startCol = getStartColumn(i);
             MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
             net.train(input, learningRate);
             if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
-                System.out.println("epoch " + epoch + " : avg. accuracy: " + (epochAccuraciesSum / NUM_BATCHES_PER_EPOCH));
+                System.out.println(
+                        "epoch " + epoch + " : avg. accuracy: " + (epochAccuraciesSum / NUM_BATCHES_PER_EPOCH));
                 epochAccuraciesSum = 0.0;
                 ++epoch;
+                // reshuffle
+                Statistics.shuffleColumnsInplace(IMAGES, epoch);
+                Statistics.shuffleColumnsInplace(EXPECT, epoch);
             }
         }
 
