@@ -1,3 +1,18 @@
+/*
+ * Copyright 2024 Stefan Zobel
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package math.ml.mlp;
 
 import net.jamu.matrix.Matrices;
@@ -13,6 +28,7 @@ public class Hidden extends AbstractLayer {
     public Hidden(int in, int out) {
         int i = in;
         int j = out;
+        // Glorot uniform initialization
         float bound = (float) Math.sqrt(6.0 / (i + j));
         weights = Matrices.randomUniformF(j, i, -bound, bound);
         biases = Matrices.createF(j, 1);
@@ -33,29 +49,6 @@ public class Hidden extends AbstractLayer {
         }
         // (i x j) * (j x m) = (i x m)
         MatrixF inputErrJacobian = weights.transposedTimes(outputGrads);
-        // (j x i) = (j * m) * (m x i)
-        // we don't have a single y1, but m exemplars of it, just as with y2 etc.
-        //
-        // dE/dW =
-        // dE/dw11 dE/dw12 ... dE/dw1i
-        // ...
-        // dE/dwj1 dE/dwj2 --- dE/dwji
-        //
-        // generally: dE/dwji = dE/dyj * xi
-        // => dE/dW = dE/dY * X_trans
-        // the OutputGrads:
-        // dE1/dY11 dE2/dY12 ... dEm/dY1m
-        // ....
-        // dE1/dYj1 dE2/dYj2 ... dEm/dYjm
-        // the Inputs (transposed):
-        // X11 X12 .......... X1i
-        // X21 X22 .......... X2i
-        // ...
-        // Xm1 Xm2 .......... Xmi
-        // ----
-        // dE/dw11 expanded:
-        // dE1/dY11 * X11 + dE2/dY12 * X21 + ... dEm/dY1m * Xm1 == dE/dw11
-        // batch size = m = outputGrads.numColumns()
         MatrixF avgWeightsGrad = outputGrads.timesTransposed(input).scaleInplace(1.0f / outputGrads.numColumns());
         input = null;
         // j x 1
