@@ -57,7 +57,8 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
 
     public static void main(String[] args) {
         MNIST_TrainingNetwork net = new MNIST_TrainingNetwork();
-        CrossEntropyLoss loss = new CrossEntropyLoss();
+//        CrossEntropyLoss loss = new CrossEntropyLoss(); // XXX
+        SoftmaxCrossEntropyLoss loss = new SoftmaxCrossEntropyLoss();
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
         loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
@@ -69,7 +70,7 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         net.add(new Activation()); // 256
         net.add(new Hidden(256, NUM_LABELS));
         net.add(new Activation()); // 10
-        net.add(new Softmax());
+//        net.add(new Softmax()); // XXX
         net.add(loss);
 
         final float learningRate = 0.005f;
@@ -86,7 +87,7 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
             net.train(input, learningRate);
             if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
                 System.out.println(
-                        "epoch " + epoch + " : avg. accuracy: " + (epochAccuraciesSum / NUM_BATCHES_PER_EPOCH));
+                        "epoch " + epoch + "   : avg. accuracy: " + (epochAccuraciesSum / NUM_BATCHES_PER_EPOCH));
                 epochAccuraciesSum = 0.0;
                 ++epoch;
                 // reshuffle before the next epoch
@@ -102,6 +103,6 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
 
         MatrixF predict = net.infer(TEST_IMAGES);
         double accuracy = CategorialAccuracy.computeAccuracy(predict, TEST_EXPECT);
-        System.out.println("epoch " + epoch + " : avg. accuracy in validation: " + accuracy);
+        System.out.println("validation : avg. accuracy in validation: " + accuracy);
     }
 }
