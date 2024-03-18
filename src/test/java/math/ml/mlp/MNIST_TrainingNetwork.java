@@ -43,14 +43,15 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         return EXPECT.selectConsecutiveColumns(col, col + BATCH_SIZE - 1);
     }
 
-    private static final int INPUT_SIZE = 784;
     private static final int NUM_LABELS = 10;
     private static final int BATCH_SIZE = 200;
-    private static final int NUM_BATCHES_PER_EPOCH = 300;
     // 784 x 60_000
     private static final MatrixF IMAGES = Statistics.zscoreInplace(MNIST.getTrainingSetImages());
     // 10 x 60_000
     private static final MatrixF EXPECT = MNIST.getTrainingSetLabels();
+    private static final int INPUT_SIZE = IMAGES.numRows();
+    private static final int NUM_BATCHES_PER_EPOCH = IMAGES.numColumns() / BATCH_SIZE;
+    private static final int NUM_BATCHES = 40;
     private static int epoch = 0;
     private static double epochAccuraciesSum = 0.0;
 
@@ -72,11 +73,14 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         net.add(loss);
 
         final float learningRate = 0.005f;
+
+        // shuffle images and labels randomly
         long seed = ThreadLocalRandom.current().nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
-        for (int i = 0; i <= 12_000; ++i) {
+        // train for 40 epochs
+        for (int i = 0; i <= NUM_BATCHES * NUM_BATCHES_PER_EPOCH; ++i) {
             int startCol = getStartColumn(i);
             MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
             net.train(input, learningRate);
@@ -85,19 +89,19 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
                         "epoch " + epoch + " : avg. accuracy: " + (epochAccuraciesSum / NUM_BATCHES_PER_EPOCH));
                 epochAccuraciesSum = 0.0;
                 ++epoch;
-                // reshuffle
+                // reshuffle before the next epoch
                 seed = ThreadLocalRandom.current().nextLong();
                 Statistics.shuffleColumnsInplace(IMAGES, seed);
                 Statistics.shuffleColumnsInplace(EXPECT, seed);
             }
         }
 
-        System.out.println("\nDone with training. Starting testset evaluation.");
+        System.out.println("\nDone with training. Starting validation.");
         final MatrixF TEST_IMAGES = Statistics.zscoreInplace(MNIST.getTestSetImages());
         final MatrixF TEST_EXPECT = MNIST.getTestSetLabels();
 
         MatrixF predict = net.infer(TEST_IMAGES);
         double accuracy = CategorialAccuracy.computeAccuracy(predict, TEST_EXPECT);
-        System.out.println("epoch " + epoch + " : avg. accuracy in testset: " + accuracy);
+        System.out.println("epoch " + epoch + " : avg. accuracy in validation: " + accuracy);
     }
 }
