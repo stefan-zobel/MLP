@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.util.concurrent.ThreadLocalRandom;
+
 import math.ml.loader.MNIST;
 import net.jamu.matrix.MatrixF;
 import net.jamu.matrix.Statistics;
@@ -70,8 +72,9 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         net.add(loss);
 
         final float learningRate = 0.005f;
-        Statistics.shuffleColumnsInplace(IMAGES, 0);
-        Statistics.shuffleColumnsInplace(EXPECT, 0);
+        long seed = ThreadLocalRandom.current().nextLong();
+        Statistics.shuffleColumnsInplace(IMAGES, seed);
+        Statistics.shuffleColumnsInplace(EXPECT, seed);
 
         for (int i = 0; i <= 12_000; ++i) {
             int startCol = getStartColumn(i);
@@ -83,8 +86,9 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
                 epochAccuraciesSum = 0.0;
                 ++epoch;
                 // reshuffle
-                Statistics.shuffleColumnsInplace(IMAGES, epoch);
-                Statistics.shuffleColumnsInplace(EXPECT, epoch);
+                seed = ThreadLocalRandom.current().nextLong();
+                Statistics.shuffleColumnsInplace(IMAGES, seed);
+                Statistics.shuffleColumnsInplace(EXPECT, seed);
             }
         }
 
