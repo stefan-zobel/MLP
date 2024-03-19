@@ -59,19 +59,19 @@ public class RandomByRoteNetwork extends AbstractNetwork {
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
         loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
-        net.add(new Hidden(INPUT_SIZE, 1024, "1", false));
+        net.add(new Hidden(INPUT_SIZE, 1024, "1"));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 1024, "2", false));
+        net.add(new Hidden(1024, 1024, "2"));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 1024, "3", false));
+        net.add(new Hidden(1024, 1024, "3"));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 1024, "4", false));
+        net.add(new Hidden(1024, 1024, "4"));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 512, "5", false));
+        net.add(new Hidden(1024, 512, "5"));
         net.add(new Gelu()); // 512
-        net.add(new Hidden(512, 256, "6", false));
+        net.add(new Hidden(512, 256, "6"));
         net.add(new Gelu()); // 256
-        net.add(new Hidden(256, NUM_LABELS, "7", false));
+        net.add(new Hidden(256, NUM_LABELS, "7"));
         net.add(new Gelu()); // 10
         net.add(new Softmax());
         net.add(loss);

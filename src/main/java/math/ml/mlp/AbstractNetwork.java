@@ -80,6 +80,12 @@ public abstract class AbstractNetwork implements TrainableNetwork {
             }
             input = layer.forward(input);
         }
+        for (Layer layer : layers) {
+            if (layer instanceof Hidden) {
+                ((Hidden) layer).storeWeights();
+                ((Hidden) layer).storeBiases();
+            }
+        }
         // this is the prediction of the last layer
         return input;
     }

@@ -15,6 +15,11 @@
  */
 package math.ml.mlp;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -24,14 +29,27 @@ public class Hidden extends AbstractLayer {
     protected final MatrixF weights;
     // j x 1
     protected final MatrixF biases;
+    protected final String name;
+    protected final boolean storeWeightsAndBiases;
 
-    public Hidden(int in, int out) {
+    public Hidden(int in, int out, String name) {
+        this(in, out, name, false, false);
+    }
+
+    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases) {
+        this.name = name;
+        this.storeWeightsAndBiases = storeWeightsAndBiases;
         int i = in;
         int j = out;
-        // Glorot uniform initialization
-        float bound = (float) Math.sqrt(6.0 / (i + j));
-        weights = Matrices.randomUniformF(j, i, -bound, bound);
-        biases = Matrices.createF(j, 1);
+        if (loadWeightsAndBiases) {
+            weights = loadWeights();
+            biases = loadBiases();
+        } else {
+            // Glorot uniform initialization
+            float bound = (float) Math.sqrt(6.0 / (i + j));
+            weights = Matrices.randomUniformF(j, i, -bound, bound);
+            biases = Matrices.createF(j, 1);
+        }
     }
 
     @Override
@@ -56,5 +74,41 @@ public class Hidden extends AbstractLayer {
         weights.addInplace(-learningRate, avgWeightsGrad);
         biases.addInplace(-learningRate, avgBiasesGrad);
         return inputErrJacobian;
+    }
+
+    private MatrixF loadWeights() {
+        return load("./data/w_" + name);
+    }
+
+    private MatrixF loadBiases() {
+        return load("./data/b_" + name);
+    }
+
+    public void storeWeights() {
+        if (storeWeightsAndBiases) {
+            store("w_" + name, weights);
+        }
+    }
+
+    public void storeBiases() {
+        if (storeWeightsAndBiases) {
+            store("b_" + name, biases);
+        }
+    }
+
+    private MatrixF load(String name) {
+        try (FileInputStream fis = new FileInputStream(name)) {
+            return Matrices.deserializeF(fis);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void store(String name, MatrixF matrix) {
+        try (FileOutputStream fos = new FileOutputStream(name)) {
+            Matrices.serializeF(matrix, fos);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }
