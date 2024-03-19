@@ -34,6 +34,8 @@ public final class MNIST {
     private static final MatrixF[] ONE_HOT = new MatrixF[NUMBER_OF_DISTINCT_LABELS];
 
     private static final String TRAIN_IMAGES = "./data/mnist/train-images.idx3-ubyte";
+    private static final String TRAIN_IMAGES_LEFT = "./data/mnist/train-images-left.idx3-ubyte";
+    private static final String TRAIN_IMAGES_RIGHT = "./data/mnist/train-images-right.idx3-ubyte";
     private static final String TRAIN_LABELS = "./data/mnist/train-labels.idx1-ubyte";
     private static final String TEST_IMAGES = "./data/mnist/t10k-images.idx3-ubyte";
     private static final String TEST_LABELS = "./data/mnist/t10k-labels.idx1-ubyte";
@@ -46,6 +48,34 @@ public final class MNIST {
     public static MatrixF getTrainingSetImages() {
         try {
             return readImages(TRAIN_IMAGES);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Loads the training images (shifted one pixel to the left) into a
+     * {@code 784 x 60_000} matrix.
+     * 
+     * @return MNIST training set images shifted one pixel to the left
+     */
+    public static MatrixF getTrainingSetImagesLeft() {
+        try {
+            return readImages(TRAIN_IMAGES_LEFT);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Loads the training images (shifted one pixel to the right) into a
+     * {@code 784 x 60_000} matrix.
+     * 
+     * @return MNIST training set images shifted one pixel to the right
+     */
+    public static MatrixF getTrainingSetImagesRight() {
+        try {
+            return readImages(TRAIN_IMAGES_RIGHT);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
