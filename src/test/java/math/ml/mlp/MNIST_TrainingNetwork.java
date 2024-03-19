@@ -45,10 +45,14 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
 
     private static final int NUM_LABELS = 10;
     private static final int BATCH_SIZE = 200;
-    // 784 x 60_000
-    private static final MatrixF IMAGES = Statistics.zscoreInplace(MNIST.getTrainingSetImages());
-    // 10 x 60_000
-    private static final MatrixF EXPECT = MNIST.getTrainingSetLabels();
+    // 784 x 180_000
+    private static final MatrixF IMAGES = Statistics.zscoreInplace(MNIST.getTrainingSetImages()
+            .appendMatrix(MNIST.getTrainingSetImagesLeft()).appendMatrix(MNIST.getTrainingSetImagesRight()));
+
+    // 10 x 180_000
+    private static final MatrixF EXPECT = MNIST.getTrainingSetLabels().appendMatrix(MNIST.getTrainingSetLabels())
+            .appendMatrix(MNIST.getTrainingSetLabels());
+
     private static final int INPUT_SIZE = IMAGES.numRows();
     private static final int NUM_BATCHES_PER_EPOCH = IMAGES.numColumns() / BATCH_SIZE;
     private static final int NUM_BATCHES = 40;
@@ -62,18 +66,18 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
         loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
-        net.add(new Hidden(INPUT_SIZE, 768));
-        net.add(new Activation()); // 768
-        net.add(new Hidden(768, 384));
-        net.add(new Activation()); // 384
-        net.add(new Hidden(384, 256));
-        net.add(new Activation()); // 256
-        net.add(new Hidden(256, NUM_LABELS));
-        net.add(new Activation()); // 10
+        net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true));
+        net.add(new Relu()); // 768
+        net.add(new Hidden(768, 384, "layer2", false, true));
+        net.add(new Relu()); // 384
+        net.add(new Hidden(384, 256, "layer3", false, true));
+        net.add(new Relu()); // 256
+        net.add(new Hidden(256, NUM_LABELS, "layer4", false, true));
+        net.add(new Relu()); // 10
 //        net.add(new Softmax()); // XXX
         net.add(loss);
 
-        final float learningRate = 0.005f;
+        final float learningRate = 0.001f;
 
         // shuffle images and labels randomly
         long seed = ThreadLocalRandom.current().nextLong();
