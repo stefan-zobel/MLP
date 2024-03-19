@@ -19,12 +19,12 @@ import math.dl.Hellinger;
 import net.jamu.matrix.MatrixF;
 
 /**
- * TODO
+ * Calculation of the accuracy of a categorial classifier.
  */
 public final class CategorialHellingerAccuracy {
 
     /**
-     * TODO
+     * Calculation of the accuracy of a categorial classifier.
      * 
      * @param pred
      * @param expect
