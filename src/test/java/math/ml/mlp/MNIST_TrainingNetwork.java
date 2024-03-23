@@ -17,7 +17,9 @@ package math.ml.mlp;
 
 import java.util.concurrent.ThreadLocalRandom;
 
+import math.cern.Arithmetic;
 import math.ml.loader.MNIST;
+import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 import net.jamu.matrix.Statistics;
 
@@ -29,6 +31,12 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
     public MNIST_TrainingNetwork() {
     }
 
+    @Override
+    public void onLossComputationCompleted(MatrixF losses) {
+        epochLossesSum += Matrices.colsAverage(losses).toScalar();
+    }
+
+    @Override
     public void onAccuracyComputationCompleted(double accuracy) {
         epochAccuraciesSum += accuracy;
     }
@@ -38,6 +46,7 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         return batchNumber * BATCH_SIZE;
     }
 
+    @Override
     public MatrixF getExpectedBatchResults(int batchNumber) {
         int col = getStartColumn(batchNumber);
         return EXPECT.selectConsecutiveColumns(col, col + BATCH_SIZE - 1);
@@ -53,17 +62,22 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
     private static final MatrixF EXPECT = MNIST.getTrainingSetLabels().appendMatrix(MNIST.getTrainingSetLabels())
             .appendMatrix(MNIST.getTrainingSetLabels());
 
+    private static final MatrixF TEST_IMAGES = Statistics.zscoreInplace(MNIST.getTestSetImages());
+    private static final MatrixF TEST_EXPECT = MNIST.getTestSetLabels();
+
     private static final int INPUT_SIZE = IMAGES.numRows();
     private static final int NUM_BATCHES_PER_EPOCH = IMAGES.numColumns() / BATCH_SIZE;
-    private static final int NUM_BATCHES = 40;
+    private static final int NUM_BATCHES = 100;
     private static int epoch = 0;
     private static double epochAccuraciesSum = 0.0;
+    private static double epochLossesSum = 0.0;
 
     public static void main(String[] args) {
         MNIST_TrainingNetwork net = new MNIST_TrainingNetwork();
 //        CrossEntropyLoss loss = new CrossEntropyLoss(); // XXX
         SoftmaxCrossEntropyLoss loss = new SoftmaxCrossEntropyLoss();
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
+        loss.registerLossCallback(net::onLossComputationCompleted);
         loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
         net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true));
@@ -77,23 +91,31 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
 //        net.add(new Softmax()); // XXX
         net.add(loss);
 
-        final float learningRate = 0.001f;
+        final float learningRate = 0.001f; // XXX ?
 
         // shuffle images and labels randomly
         long seed = ThreadLocalRandom.current().nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
-        // train for 40 epochs
+        // train for up to 100 epochs
         for (int i = 0; i <= NUM_BATCHES * NUM_BATCHES_PER_EPOCH; ++i) {
             int startCol = getStartColumn(i);
             MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
             net.train(input, learningRate);
             if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
-                System.out.println(
-                        "epoch " + epoch + "   : avg. accuracy: " + (epochAccuraciesSum / NUM_BATCHES_PER_EPOCH));
+                double trainingAccuracy = Arithmetic.round(epochAccuraciesSum / NUM_BATCHES_PER_EPOCH, 6);
+                double validationAccuracy = net.validationAccuracy();
+                System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
+                        + Arithmetic.round(epochLossesSum / NUM_BATCHES_PER_EPOCH, 6)
+                        + "   : validation avg. accuracy: " + validationAccuracy);
                 epochAccuraciesSum = 0.0;
+                epochLossesSum = 0.0;
                 ++epoch;
+                if (validationAccuracy < trainingAccuracy) {
+                    System.out.println("potential overfitting. BREAK.");
+                    break;
+                }
                 // reshuffle before the next epoch
                 seed = ThreadLocalRandom.current().nextLong();
                 Statistics.shuffleColumnsInplace(IMAGES, seed);
@@ -101,12 +123,14 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
             }
         }
 
-        System.out.println("\nDone with training. Starting validation.");
-        final MatrixF TEST_IMAGES = Statistics.zscoreInplace(MNIST.getTestSetImages());
-        final MatrixF TEST_EXPECT = MNIST.getTestSetLabels();
-
+        System.out.println("\nDone with training. Checking last validation accuracy.");
         MatrixF predict = net.infer(TEST_IMAGES);
         double accuracy = CategorialAccuracy.computeAccuracy(predict, TEST_EXPECT);
         System.out.println("validation : avg. accuracy in validation: " + accuracy);
+    }
+
+    private double validationAccuracy() {
+        MatrixF predict = infer(TEST_IMAGES);
+        return CategorialAccuracy.computeAccuracy(predict, TEST_EXPECT);
     }
 }
