@@ -124,8 +124,7 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         }
 
         System.out.println("\nDone with training. Checking last validation accuracy.");
-        MatrixF predict = net.infer(TEST_IMAGES);
-        double accuracy = CategorialAccuracy.computeAccuracy(predict, TEST_EXPECT);
+        double accuracy = net.validationAccuracy();
         System.out.println("validation : avg. accuracy in validation: " + accuracy);
     }
 
