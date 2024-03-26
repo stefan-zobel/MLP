@@ -28,7 +28,7 @@ public abstract class AbstractLayer implements Layer {
             // i x m
             this.input = input;
         }
-        return null;
+        return input;
     }
 
     @Override
