@@ -85,6 +85,7 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         net.add(new Dropout(dropoutRate));
         net.add(new Relu()); // 768
         net.add(new Hidden(768, 384, "layer2", false, true));
+        net.add(new Dropout(dropoutRate));
         net.add(new Relu()); // 384
         net.add(new Hidden(384, 256, "layer3", false, true));
         net.add(new Dropout(dropoutRate));
@@ -123,7 +124,7 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
                     System.out.println("potential overfitting. Stopping.");
                     break;
                 }
-//                if (validationAccuracy >= 0.99) {
+//                if (validationAccuracy > 0.99) {
 //                    System.out.println("Found a net with accuracy " + validationAccuracy + ". Stopping.");
 //                    break;
 //                }
