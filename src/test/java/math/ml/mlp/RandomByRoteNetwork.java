@@ -77,7 +77,7 @@ public class RandomByRoteNetwork extends AbstractNetwork {
         net.add(loss);
 
         MatrixF input = Matrices.randomUniformF(INPUT_SIZE, BATCH_SIZE, -1.0f, 1.0f);
-        input = Statistics.zscoreInplace(input);
+        input = Statistics.zscoreColumnsInplace(input);
 
         final float learningRate = 0.008f;
 

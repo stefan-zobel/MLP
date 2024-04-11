@@ -55,14 +55,14 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
     private static final int NUM_LABELS = 10;
     private static final int BATCH_SIZE = 200;
     // 784 x 180_000
-    private static final MatrixF IMAGES = Statistics.zscoreInplace(MNIST.getTrainingSetImages()
+    private static final MatrixF IMAGES = Statistics.zscoreColumnsInplace(MNIST.getTrainingSetImages()
             .appendMatrix(MNIST.getTrainingSetImagesLeft()).appendMatrix(MNIST.getTrainingSetImagesRight()));
 
     // 10 x 180_000
     private static final MatrixF EXPECT = MNIST.getTrainingSetLabels().appendMatrix(MNIST.getTrainingSetLabels())
             .appendMatrix(MNIST.getTrainingSetLabels());
 
-    private static final MatrixF TEST_IMAGES = Statistics.zscoreInplace(MNIST.getTestSetImages());
+    private static final MatrixF TEST_IMAGES = Statistics.zscoreColumnsInplace(MNIST.getTestSetImages());
     private static final MatrixF TEST_EXPECT = MNIST.getTestSetLabels();
 
     private static final int INPUT_SIZE = IMAGES.numRows();
