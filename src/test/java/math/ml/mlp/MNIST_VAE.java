@@ -1,0 +1,217 @@
+/*
+ * Copyright 2026 Stefan Zobel
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package math.ml.mlp;
+
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+
+import math.cern.Arithmetic;
+import math.ml.loader.MNIST;
+import net.jamu.matrix.Matrices;
+import net.jamu.matrix.MatrixF;
+import net.jamu.matrix.Statistics;
+
+/**
+ * A Variational Autoencoder (VAE) trained on MNIST.
+ *
+ * <h3>Architecture overview</h3>
+ * <pre>
+ *  Input (784)
+ *      ?
+ *  Hidden(784?256) + ReLU          ? shared encoder
+ *      ?
+ *  Hidden(256?128) + ReLU          ? shared encoder
+ *      ?
+ *  ???? ParallelBranches ????????????????????????????????
+ *  ?  Branch 0: Hidden(128?LATENT)  ? ?   (LATENT × m) ?
+ *  ?  Branch 1: Hidden(128?LATENT)  ? log?²(LATENT × m)?
+ *  ???????????????????????????????????????????????????????
+ *      ?  (2·LATENT × m, rows [0..LATENT-1]=?, [LATENT..2·LATENT-1]=log?²)
+ *  ReparamLayer(LATENT)             ? z = ? + ???, adds KL gradient in bwd
+ *      ?  (LATENT × m)
+ *  Hidden(LATENT?128) + ReLU       ? decoder
+ *      ?
+ *  Hidden(128?256)    + ReLU       ? decoder
+ *      ?
+ *  Hidden(256?784)    + Sigmoid    ? reconstruction in (0,1)
+ *      ?
+ *  BinaryCrossEntropyLoss           ? reconstruction loss (targets = inputs)
+ * </pre>
+ *
+ * <h3>No changes to AbstractNetwork.train() necessary</h3>
+ * The outer training loop in {@link AbstractNetwork#train} sees a strictly
+ * sequential list of layers and is completely unaware of the internal
+ * branching structure inside {@link ParallelBranches}. The split/merge
+ * topology is handled transparently:
+ * <ul>
+ *   <li>Forward: {@code ParallelBranches.forward(x)} fans out {@code x} into
+ *       both heads and vertically stacks their outputs.</li>
+ *   <li>Backward: {@code ParallelBranches.backward(grad)} splits the incoming
+ *       gradient, routes each slice through its branch in reverse, and sums
+ *       the input-side gradients (chain rule).</li>
+ *   <li>The KL-divergence gradient is injected by
+ *       {@code ReparamLayer.backward()} – no separate loss term needed.</li>
+ * </ul>
+ */
+public class MNIST_VAE extends AbstractNetwork {
+
+    // -----------------------------------------------------------------------
+    // Hyper-parameters
+    // -----------------------------------------------------------------------
+    private static final int LATENT_DIM    = 20;
+    private static final int BATCH_SIZE    = 128;
+    private static final int NUM_EPOCHS    = 50;
+    private static final float LOWER       = 0.0f;
+    private static final float UPPER       = 1.0f;
+
+    // -----------------------------------------------------------------------
+    // Dataset (use only the original 60 000 training images)
+    // -----------------------------------------------------------------------
+    private static final MatrixF IMAGES =
+            Statistics.rescaleInplace(MNIST.getTrainingSetImages(), LOWER, UPPER);
+    // Reconstruction target = input image itself
+    private static final MatrixF TARGETS = IMAGES;
+
+    private static final MatrixF TEST_IMAGES =
+            Statistics.rescaleInplace(MNIST.getTestSetImages(), LOWER, UPPER);
+
+    private static final int INPUT_DIM            = IMAGES.numRows();   // 784
+    private static final int NUM_BATCHES_PER_EPOCH = IMAGES.numColumns() / BATCH_SIZE;
+
+    // -----------------------------------------------------------------------
+    // Training state
+    // -----------------------------------------------------------------------
+    private static int    epoch          = 0;
+    private static double epochLossSum   = 0.0;
+    private static int    batchesInEpoch = 0;
+
+    // -----------------------------------------------------------------------
+    // AbstractNetwork contract
+    // -----------------------------------------------------------------------
+
+    @Override
+    public MatrixF getExpectedBatchResults(int batchNumber) {
+        // The reconstruction target is the input image itself.
+        int batchIdx = batchNumber % NUM_BATCHES_PER_EPOCH;
+        int startCol = batchIdx * BATCH_SIZE;
+        return TARGETS.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+    }
+
+    @Override
+    public void onLossComputationCompleted(MatrixF losses) {
+        epochLossSum += Matrices.colsAverage(losses).toScalar();
+        ++batchesInEpoch;
+    }
+
+    // -----------------------------------------------------------------------
+    // Entry point
+    // -----------------------------------------------------------------------
+
+    public static void main(String[] args) {
+
+        MNIST_VAE net = new MNIST_VAE();
+
+        // --- Loss ---------------------------------------------------------
+        BinaryCrossEntropyLoss bce = new BinaryCrossEntropyLoss();
+        bce.registerLossCallback(net::onLossComputationCompleted);
+        bce.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
+
+        // --- Encoder ------------------------------------------------------
+        net.add(new Hidden(INPUT_DIM, 256, "enc1"));
+        net.add(new Relu());
+        net.add(new Hidden(256, 128, "enc2"));
+        net.add(new Relu());
+
+        // --- Split: ? and log ?² heads ------------------------------------
+        net.add(new ParallelBranches(
+                List.of(new Hidden(128, LATENT_DIM, "mu")),      // rows [0..LATENT_DIM-1]
+                List.of(new Hidden(128, LATENT_DIM, "logvar"))   // rows [LATENT_DIM..2*LATENT_DIM-1]
+        ));
+
+        // --- Reparameterization + KL gradient (? = 1.0) ------------------
+        net.add(new VAEReparamLayer(LATENT_DIM));
+
+        // --- Decoder ------------------------------------------------------
+        net.add(new Hidden(LATENT_DIM, 128, "dec1"));
+        net.add(new Relu());
+        net.add(new Hidden(128, 256, "dec2"));
+        net.add(new Relu());
+        net.add(new Hidden(256, INPUT_DIM, "dec3"));
+        net.add(new Sigmoid());
+
+        // --- Reconstruction loss (targets = inputs) -----------------------
+        net.add(bce);
+
+        // -----------------------------------------------------------------------
+        // Training loop
+        // -----------------------------------------------------------------------
+        final float lr = 0.001f;
+
+        long seed = ThreadLocalRandom.current().nextLong();
+        Statistics.shuffleColumnsInplace(IMAGES, seed);
+        // TARGETS == IMAGES, so it is already shuffled in sync.
+
+        for (int i = 0; i <= NUM_EPOCHS * NUM_BATCHES_PER_EPOCH; ++i) {
+            int batchIdx = i % NUM_BATCHES_PER_EPOCH;
+            int startCol = batchIdx * BATCH_SIZE;
+            MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+            net.train(input, lr);
+
+            if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
+                double avgLoss = Arithmetic.round(epochLossSum / batchesInEpoch, 6);
+                System.out.println("epoch " + epoch + "  avg. BCE loss: " + avgLoss);
+                epochLossSum   = 0.0;
+                batchesInEpoch = 0;
+                ++epoch;
+
+                // Reshuffle before next epoch (targets follow automatically).
+                seed = ThreadLocalRandom.current().nextLong();
+                Statistics.shuffleColumnsInplace(IMAGES, seed);
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Quick reconstruction check on first 10 test images
+        // -----------------------------------------------------------------------
+        System.out.println("\nReconstruction check (first 10 test images):");
+        MatrixF sample    = TEST_IMAGES.selectConsecutiveColumns(0, 9);
+        MatrixF recon     = net.infer(sample);
+        float   reconLoss = averageBCE(sample, recon);
+        System.out.printf("avg. reconstruction BCE loss: %.6f%n", reconLoss);
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    private static float averageBCE(MatrixF target, MatrixF pred) {
+        int rows = target.numRows();
+        int cols = target.numColumns();
+        double sum = 0.0;
+        for (int c = 0; c < cols; c++) {
+            for (int r = 0; r < rows; r++) {
+                float p = clamp(pred.getUnsafe(r, c));
+                float t = target.getUnsafe(r, c);
+                sum -= t * Math.log(p) + (1.0 - t) * Math.log(1.0 - clamp(1.0f - p));
+            }
+        }
+        return (float) (sum / (rows * cols));
+    }
+
+    private static float clamp(float x) {
+        return Math.max(x, Float.MIN_NORMAL);
+    }
+}
