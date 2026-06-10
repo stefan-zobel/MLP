@@ -37,4 +37,14 @@ public interface Layer {
     MatrixF backward(MatrixF grads, float learningRate);
 
     void setMode(NetworkMode mode);
+
+    /**
+     * Persists the trainable parameters of this layer (e.g. weights and biases).
+     * The default implementation is a no-op; layers with storable parameters
+     * should override this method. Composite layers (e.g.
+     * {@link ParallelBranches}) should delegate to all their sub-layers.
+     */
+    default void storeParameters() {
+        // no-op by default
+    }
 }

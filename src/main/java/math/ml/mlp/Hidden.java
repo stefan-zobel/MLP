@@ -96,6 +96,16 @@ public class Hidden extends AbstractLayer {
         }
     }
 
+    /**
+     * Persists both the weights and the biases of this layer if the
+     * {@code storeWeightsAndBiases} flag was set at construction time.
+     */
+    @Override
+    public void storeParameters() {
+        storeWeights();
+        storeBiases();
+    }
+
     private MatrixF load(String name) {
         try (FileInputStream fis = new FileInputStream(name)) {
             return Matrices.deserializeF(fis);

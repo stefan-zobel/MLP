@@ -80,11 +80,10 @@ public abstract class AbstractNetwork implements TrainableNetwork {
             }
             input = layer.forward(input);
         }
+        // Persist parameters of all layers (Hidden layers check their own flag;
+        // composite layers like ParallelBranches delegate to their sub-layers).
         for (Layer layer : layers) {
-            if (layer instanceof Hidden) {
-                ((Hidden) layer).storeWeights();
-                ((Hidden) layer).storeBiases();
-            }
+            layer.storeParameters();
         }
         // this is the prediction of the last layer
         return input;
