@@ -203,9 +203,15 @@ public class MNIST_VAE extends AbstractNetwork {
         double sum = 0.0;
         for (int c = 0; c < cols; c++) {
             for (int r = 0; r < rows; r++) {
-                float p = clamp(pred.getUnsafe(r, c));
+                float rawP = pred.getUnsafe(r, c);
+                // Clamp p and (1-p) independently from the raw prediction.
+                // Using 1.0 - clamp(1-p) would cause log(0) when rawP ? 0,
+                // because 1.0f - rawP rounds to 1.0f (float underflow) and
+                // clamp(1.0f) = 1.0f, so 1.0 - 1.0f = 0.0 exactly -> log(0) = -Inf.
+                float p = clamp(rawP);
+                float q = clamp(1.0f - rawP);   // 1-p clamped from the raw value
                 float t = target.getUnsafe(r, c);
-                sum -= t * Math.log(p) + (1.0 - t) * Math.log(1.0 - clamp(1.0f - p));
+                sum -= t * Math.log(p) + (1.0 - t) * Math.log(q);
             }
         }
         return (float) (sum / (rows * cols));
