@@ -25,6 +25,10 @@ public class Dropout extends AbstractLayer {
     private final float dropoutRate;
     private final float scalingFactor;
     private BitSet mask = new BitSet(0);
+    // Track the last allocated size to decide whether to reallocate or reuse.
+    // BitSet.size() returns the internal capacity rounded up to 64, NOT the
+    // requested constructor argument, so it cannot be used for this check.
+    private int lastInputSize = 0;
 
     public Dropout(float dropoutRate) {
         this.dropoutRate = dropoutRate;
@@ -37,16 +41,19 @@ public class Dropout extends AbstractLayer {
         if (mode == NetworkMode.INFER || dropoutRate <= 0.0f) {
             return input;
         }
-        int inputSize = input.numRows() * input.numColumns();
-        if (mask.size() != inputSize) {
+        int numRows  = input.numRows();
+        int numCols  = input.numColumns();
+        int inputSize = numRows * numCols;
+        if (lastInputSize != inputSize) {
             mask = new BitSet(inputSize);
+            lastInputSize = inputSize;
         } else {
             mask.clear();
         }
-        for (int col = 0; col < input.numColumns(); ++col) {
-            for (int row = 0; row < input.numRows(); ++row) {
+        for (int col = 0; col < numCols; ++col) {
+            for (int row = 0; row < numRows; ++row) {
                 if (dropout()) {
-                    mask.set(col * row);
+                    mask.set(col * numRows + row);   // column-major linear index
                     input.setUnsafe(row, col, 0.0f);
                 } else {
                     input.setUnsafe(row, col, scalingFactor * input.getUnsafe(row, col));
@@ -61,9 +68,11 @@ public class Dropout extends AbstractLayer {
         if (mode == NetworkMode.INFER) {
             return null;
         }
-        for (int col = 0; col < grads.numColumns(); ++col) {
-            for (int row = 0; row < grads.numRows(); ++row) {
-                if (mask.get(row * col)) {
+        int numRows = grads.numRows();
+        int numCols = grads.numColumns();
+        for (int col = 0; col < numCols; ++col) {
+            for (int row = 0; row < numRows; ++row) {
+                if (mask.get(col * numRows + row)) {   // same column-major index
                     grads.setUnsafe(row, col, 0.0f);
                 } else {
                     grads.setUnsafe(row, col, scalingFactor * grads.getUnsafe(row, col));
