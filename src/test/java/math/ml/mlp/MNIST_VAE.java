@@ -46,9 +46,9 @@ import net.jamu.matrix.Statistics;
  *      &darr;
  *  Hidden(128&rarr;256)    + ReLU       &larr; decoder
  *      &darr;
- *  Hidden(256&rarr;784)    + Sigmoid    &larr; reconstruction in (0,1)
+ *  Hidden(256&rarr;784)                 &larr; logits, no activation here
  *      &darr;
- *  BinaryCrossEntropyLoss           &larr; reconstruction loss (targets = inputs)
+ *  SigmoidBCELoss                   &larr; fused sigmoid + reconstruction loss
  * </pre>
  *
  * <h2>No changes to AbstractNetwork.train() necessary</h2>
@@ -125,7 +125,7 @@ public class MNIST_VAE extends AbstractNetwork {
         MNIST_VAE net = new MNIST_VAE();
 
         // --- Loss ---------------------------------------------------------
-        BinaryCrossEntropyLoss bce = new BinaryCrossEntropyLoss();
+        SigmoidBCELoss bce = new SigmoidBCELoss();
         bce.registerLossCallback(net::onLossComputationCompleted);
         bce.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
@@ -150,7 +150,6 @@ public class MNIST_VAE extends AbstractNetwork {
         net.add(new Hidden(128, 256, "dec2"));
         net.add(new Relu());
         net.add(new Hidden(256, INPUT_DIM, "dec3"));
-        net.add(new Sigmoid());
 
         // --- Reconstruction loss (targets = inputs) -----------------------
         net.add(bce);
