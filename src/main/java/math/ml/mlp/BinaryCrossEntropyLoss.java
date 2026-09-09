@@ -44,7 +44,10 @@ import net.jamu.matrix.MatrixF;
  *            = (p_i &minus; t_i) / [p&middot;(1&minus;p)] &middot; p&middot;(1&minus;p)
  *            = p_i &minus; t_i
  * </pre>
- * So the p&middot;(1&minus;p) terms cancel and the result is perfectly well-behaved.
+ * The p&middot;(1&minus;p) terms cancel in exact arithmetic, but not in {@code float}:
+ * from about {@code x = 17} the sigmoid rounds to exactly {@code 1.0f}, its
+ * derivative becomes {@code 0}, and the gradient is lost. Prefer
+ * {@link SigmoidBCELoss}, which fuses the two and stays exact.
  *
  * <h2>Usage in a VAE network</h2>
  * <pre>{@code
