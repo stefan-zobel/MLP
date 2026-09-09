@@ -15,6 +15,15 @@
  */
 package math.ml.mlp;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -55,7 +64,12 @@ import net.jamu.matrix.MatrixF;
  */
 public class BatchNorm extends AbstractLayer {
 
+    private static final String LOAD_DIR = "./data/";
+    private static final String STORE_DIR = "./checkpoints/";
+
     private final int     features;
+    private final String  name;
+    private final boolean storeParameters;
     private final float   eps;
     /** Weight for new batch statistics in the running-average update. */
     private final float   momentum;
@@ -99,15 +113,99 @@ public class BatchNorm extends AbstractLayer {
      *                 weight {@code (1 - momentum)}; typical value: {@code 0.1f}
      */
     public BatchNorm(int features, float eps, float momentum) {
+        this(features, eps, momentum, null, false, false);
+    }
+
+    /**
+     * Creates a BatchNorm layer that can persist its parameters, mirroring the
+     * {@link Hidden} constructor.
+     *
+     * @param features number of input features
+     * @param name     identifies the checkpoint file {@code bn_<name>}
+     * @param load     read the parameters from {@code ./data/} at construction
+     * @param store    let {@link #storeParameters()} write to {@code ./checkpoints/}
+     */
+    public BatchNorm(int features, String name, boolean load, boolean store) {
+        this(features, 1e-5f, 0.1f, name, load, store);
+    }
+
+    /**
+     * Creates a persisting BatchNorm layer with explicit numerical parameters.
+     *
+     * @param features number of input features
+     * @param eps      small constant added to the variance for numerical stability
+     * @param momentum weight applied to the new batch statistics
+     * @param name     identifies the checkpoint file {@code bn_<name>}
+     * @param load     read the parameters from {@code ./data/} at construction
+     * @param store    let {@link #storeParameters()} write to {@code ./checkpoints/}
+     */
+    public BatchNorm(int features, float eps, float momentum, String name, boolean load, boolean store) {
         this.features = features;
         this.eps      = eps;
         this.momentum = momentum;
+        this.name     = name;
+        this.storeParameters = store;
 
         // gamma = 1, runningVar = 1; beta and runningMean stay 0
         gamma       = Matrices.onesF(features, 1);
         beta        = Matrices.createF(features, 1);
         runningMean = Matrices.createF(features, 1);
         runningVar  = Matrices.onesF(features, 1);
+
+        if (load) {
+            try (FileInputStream fis = new FileInputStream(LOAD_DIR + "bn_" + name)) {
+                readParameters(fis);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+    }
+
+    /**
+     * Writes gamma, beta, runningMean and runningVar to {@code os} in that
+     * order. All four belong together, so they share one file.
+     *
+     * @param os the stream to write into; the caller closes it
+     * @throws IOException if writing fails
+     */
+    void writeParameters(OutputStream os) throws IOException {
+        Matrices.serializeF(gamma, os);
+        Matrices.serializeF(beta, os);
+        Matrices.serializeF(runningMean, os);
+        Matrices.serializeF(runningVar, os);
+    }
+
+    /**
+     * Reads the four parameter matrices back in the order
+     * {@link #writeParameters(OutputStream)} wrote them.
+     *
+     * @param is the stream to read from; the caller closes it
+     * @throws IOException if reading fails
+     */
+    void readParameters(InputStream is) throws IOException {
+        gamma.setInplace(Matrices.deserializeF(is));
+        beta.setInplace(Matrices.deserializeF(is));
+        runningMean.setInplace(Matrices.deserializeF(is));
+        runningVar.setInplace(Matrices.deserializeF(is));
+    }
+
+    /**
+     * Persists all four parameter matrices if this layer was constructed with
+     * storing enabled.
+     */
+    @Override
+    public void storeParameters() {
+        if (!storeParameters) {
+            return;
+        }
+        try {
+            Files.createDirectories(Paths.get(STORE_DIR));
+            try (FileOutputStream fos = new FileOutputStream(STORE_DIR + "bn_" + name)) {
+                writeParameters(fos);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     // -------------------------------------------------------------------------

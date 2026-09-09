@@ -116,14 +116,18 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
                 double trainingAccuracy = Arithmetic.round(epochAccuraciesSum / NUM_BATCHES_PER_EPOCH, 6);
                 double avgTrainingLoss = Arithmetic.round(epochLossesSum / NUM_BATCHES_PER_EPOCH, 6);
                 double validationAccuracy = net.validationAccuracy();
-                maxValidationAccuracy = Math.max(maxValidationAccuracy, validationAccuracy);
+                // keep-best: only the improved model reaches the disk
+                if (validationAccuracy > maxValidationAccuracy) {
+                    maxValidationAccuracy = validationAccuracy;
+                    net.storeParameters();
+                }
                 System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
                         + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "
                         + maxValidationAccuracy);
                 epochAccuraciesSum = 0.0;
                 epochLossesSum = 0.0;
                 ++epoch;
-                if (validationAccuracy < trainingAccuracy) {
+                if (epoch > 5 && validationAccuracy < trainingAccuracy - 0.05) {
                     System.out.println("potential overfitting. Stopping.");
                     break;
                 }

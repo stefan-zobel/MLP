@@ -19,11 +19,25 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 public class Hidden extends AbstractLayer {
+
+    /**
+     * Curated parameters. Read-only from code, so that no training run can
+     * overwrite a set that was promoted here by hand.
+     */
+    private static final String LOAD_DIR = "./data/";
+
+    /**
+     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR}
+     * manually once it has proven itself.
+     */
+    private static final String STORE_DIR = "./checkpoints/";
 
     // j x i
     protected final MatrixF weights;
@@ -77,22 +91,22 @@ public class Hidden extends AbstractLayer {
     }
 
     private MatrixF loadWeights() {
-        return load("./data/w_" + name);
+        return load(LOAD_DIR + "w_" + name);
     }
 
     private MatrixF loadBiases() {
-        return load("./data/b_" + name);
+        return load(LOAD_DIR + "b_" + name);
     }
 
     public void storeWeights() {
         if (storeWeightsAndBiases) {
-            store("w_" + name, weights);
+            store(STORE_DIR + "w_" + name, weights);
         }
     }
 
     public void storeBiases() {
         if (storeWeightsAndBiases) {
-            store("b_" + name, biases);
+            store(STORE_DIR + "b_" + name, biases);
         }
     }
 
@@ -114,9 +128,12 @@ public class Hidden extends AbstractLayer {
         }
     }
 
-    private void store(String name, MatrixF matrix) {
-        try (FileOutputStream fos = new FileOutputStream(name)) {
-            Matrices.serializeF(matrix, fos);
+    private void store(String path, MatrixF matrix) {
+        try {
+            Files.createDirectories(Paths.get(STORE_DIR));
+            try (FileOutputStream fos = new FileOutputStream(path)) {
+                Matrices.serializeF(matrix, fos);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

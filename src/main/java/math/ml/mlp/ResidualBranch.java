@@ -66,7 +66,7 @@ import net.jamu.matrix.MatrixF;
  * // Residual block with BN and ReLU inside:
  * net.add(new ResidualBranch(
  *     new Hidden(256, 256, "res1"),
- *     new BatchNorm(256),
+ *     new BatchNorm(256, "res1bn", false, true),
  *     new Relu()
  * ));
  * }</pre>

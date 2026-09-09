@@ -133,21 +133,21 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
         // --- Layer 1: linear + BN + ReLU + Dropout --------------------------
-        net.add(new Hidden(INPUT_SIZE, 256, "l1"));
-        net.add(new BatchNorm(256));           // <- BatchNorm stabilizes training
+        net.add(new Hidden(INPUT_SIZE, 256, "l1", false, true));
+        net.add(new BatchNorm(256, "bn1", false, true));   // <- BatchNorm stabilizes training
         net.add(new Relu());
         net.add(new Dropout(0.15f));           // <- fixed Dropout
 
         // --- Layer 2: residual block (skip connection) ----------------------
         net.add(new ResidualBranch(            // <- ResidualBranch
-                new Hidden(256, 256, "res1"),
-                new BatchNorm(256),
+                new Hidden(256, 256, "res1", false, true),
+                new BatchNorm(256, "bn2", false, true),
                 new Relu()
         ));
         net.add(new Dropout(0.10f));
 
         // --- Output layer ---------------------------------------------------
-        net.add(new Hidden(256, NUM_LABELS, "out"));
+        net.add(new Hidden(256, NUM_LABELS, "out", false, true));
         net.add(loss);
 
         // -----------------------------------------------------------------------
@@ -170,7 +170,11 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
                 double trainingAccuracy  = Arithmetic.round(epochAccuracySum / NUM_BATCHES_PER_EPOCH, 6);
                 double avgTrainingLoss   = Arithmetic.round(epochLossSum     / NUM_BATCHES_PER_EPOCH, 6);
                 double validationAccuracy = net.validationAccuracy();
-                maxValidationAccuracy = Math.max(maxValidationAccuracy, validationAccuracy);
+                // keep-best: only the improved model reaches the disk
+                if (validationAccuracy > maxValidationAccuracy) {
+                    maxValidationAccuracy = validationAccuracy;
+                    net.storeParameters();
+                }
 
                 System.out.println("epoch " + epoch
                         + "   train acc: " + trainingAccuracy

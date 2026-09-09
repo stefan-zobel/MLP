@@ -81,12 +81,20 @@ public abstract class AbstractNetwork implements TrainableNetwork {
             }
             input = layer.forward(input);
         }
-        // Persist parameters of all layers (Hidden layers check their own flag;
-        // composite layers like ParallelBranches delegate to their sub-layers).
+        // this is the prediction of the last layer
+        return input;
+    }
+
+    /**
+     * Persists the parameters of every layer that was constructed with storing
+     * enabled; layers without storable parameters do nothing.
+     *
+     * <p>Call this explicitly from the training loop, typically only when the
+     * validation score improved. Inference deliberately does not persist.
+     */
+    public void storeParameters() {
         for (Layer layer : layers) {
             layer.storeParameters();
         }
-        // this is the prediction of the last layer
-        return input;
     }
 }

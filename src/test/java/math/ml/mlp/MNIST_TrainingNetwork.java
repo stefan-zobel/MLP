@@ -98,6 +98,8 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
+        double maxValidationAccuracy = 0.0;
+
         // train for up to 100 epochs
         for (int i = 0; i <= NUM_BATCHES * NUM_BATCHES_PER_EPOCH; ++i) {
             int startCol = getStartColumn(i);
@@ -112,7 +114,12 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
                 epochAccuraciesSum = 0.0;
                 epochLossesSum = 0.0;
                 ++epoch;
-                if (validationAccuracy < trainingAccuracy) {
+                // keep-best: only the improved model reaches the disk
+                if (validationAccuracy > maxValidationAccuracy) {
+                    maxValidationAccuracy = validationAccuracy;
+                    net.storeParameters();
+                }
+                if (epoch > 5 && validationAccuracy < trainingAccuracy - 0.05) {
                     System.out.println("potential overfitting. BREAK.");
                     break;
                 }

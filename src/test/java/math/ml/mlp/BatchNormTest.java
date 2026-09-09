@@ -24,6 +24,9 @@ import static math.ml.mlp.GradientCheck.relativeError;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+
 import org.junit.jupiter.api.Test;
 
 import net.jamu.matrix.Matrices;
@@ -113,6 +116,69 @@ class BatchNormTest {
         assertTrue(layer.backward(input(3, 4, 8L), 0.1f) == null);
     }
 
+    @Test
+    void parametersSurviveAWriteReadRoundTrip() throws Exception {
+        int features = 6;
+        int batch = 32;
+        BatchNorm original = new BatchNorm(features);
+        // train a little so gamma, beta and the running statistics all move away
+        // from their initial values
+        for (int i = 0; i < 20; ++i) {
+            original.setMode(NetworkMode.TRAIN);
+            original.forward(Matrices.randomUniformF(features, batch, 2.0f, 8.0f, i));
+            original.backward(input(features, batch, 200L + i), 0.05f);
+        }
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        original.writeParameters(buffer);
+
+        BatchNorm restored = new BatchNorm(features);
+        restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
+
+        for (String field : new String[] { "gamma", "beta", "runningMean", "runningVar" }) {
+            MatrixF a = field(original, field);
+            MatrixF b = field(restored, field);
+            for (int r = 0; r < features; ++r) {
+                assertEquals(a.getUnsafe(r, 0), b.getUnsafe(r, 0), 0.0f, field + " differs in row " + r);
+            }
+        }
+    }
+
+    @Test
+    void aRestoredLayerInfersIdentically() throws Exception {
+        int features = 5;
+        int batch = 24;
+        BatchNorm original = new BatchNorm(features);
+        for (int i = 0; i < 20; ++i) {
+            original.setMode(NetworkMode.TRAIN);
+            original.forward(Matrices.randomUniformF(features, batch, -1.0f, 4.0f, i));
+            original.backward(input(features, batch, 300L + i), 0.05f);
+        }
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        original.writeParameters(buffer);
+        BatchNorm restored = new BatchNorm(features);
+        restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
+
+        MatrixF x = input(features, 7, 301L);
+        original.setMode(NetworkMode.INFER);
+        restored.setMode(NetworkMode.INFER);
+        MatrixF expected = original.forward(x.copy());
+        MatrixF actual = restored.forward(x.copy());
+
+        for (int c = 0; c < x.numColumns(); ++c) {
+            for (int r = 0; r < features; ++r) {
+                assertEquals(expected.getUnsafe(r, c), actual.getUnsafe(r, c), 0.0f);
+            }
+        }
+    }
+
+    @Test
+    void storeParametersIsANoOpWithoutStoringEnabled() {
+        // the plain constructors must not touch the filesystem
+        new BatchNorm(4).storeParameters();
+        new BatchNorm(4, 1e-5f, 0.1f).storeParameters();
+    }
     private static double numericalParameterGradient(int features, MatrixF x, MatrixF w, String name, int row)
             throws Exception {
         double plus = lossWithParameter(features, x, w, name, row, H);
