@@ -16,16 +16,16 @@
 package math.ml.mlp;
 
 /**
- * Sigmoid activation function: ?(x) = 1 / (1 + e??).
+ * Sigmoid activation function: &sigma;(x) = 1 / (1 + e<sup>&minus;x</sup>).
  *
  * <p>Maps any real-valued input to the open interval (0, 1), making it the
- * natural output activation for a VAE decoder that reconstructs normalised
+ * natural output activation for a VAE decoder that reconstructs normalized
  * images (pixel values in [0, 1]).
  *
  * <p>When immediately followed by {@link BinaryCrossEntropyLoss}, the
- * numerically problematic 1/(p·(1?p)) denominator in the BCE gradient cancels
- * with the p·(1?p) factor in the sigmoid derivative, leaving the clean and
- * stable combined gradient <b>p ? t</b> at the sigmoid input.
+ * numerically problematic 1/(p&middot;(1&minus;p)) denominator in the BCE gradient cancels
+ * with the p&middot;(1&minus;p) factor in the sigmoid derivative, leaving the clean and
+ * stable combined gradient <b>p &minus; t</b> at the sigmoid input.
  */
 public class Sigmoid extends Activation {
 
@@ -35,10 +35,10 @@ public class Sigmoid extends Activation {
 
     /**
      * Derivative of sigmoid with respect to its pre-activation input x:
-     * ?'(x) = ?(x) · (1 ? ?(x)).
+     * &sigma;'(x) = &sigma;(x) &middot; (1 &minus; &sigma;(x)).
      *
      * <p>{@link Activation#backward} applies this function to the cached
-     * pre-activation value, so the argument here is x (not ?(x)).
+     * pre-activation value, so the argument here is x (not &sigma;(x)).
      */
     private static float dsigmoid_dx(float x) {
         float s = sigmoid(x);

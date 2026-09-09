@@ -34,8 +34,8 @@ import net.jamu.matrix.MatrixF;
  * each branch receives its own defensive copy of the original input. The
  * resulting output matrices are then vertically stacked (row-wise
  * concatenated) in branch order: if branch {@code i} produces an output of
- * shape {@code k_i × m}, the combined forward output has shape
- * {@code (? k_i) × m}.
+ * shape {@code k_i x m}, the combined forward output has shape
+ * {@code (sum k_i) x m}.
  *
  * <p><b>Backward pass:</b> the incoming gradient is split vertically
  * according to the per-branch output row counts recorded during the last
@@ -43,7 +43,7 @@ import net.jamu.matrix.MatrixF;
  * branch in reverse layer order. The resulting input-side gradients are
  * then <em>summed element-wise</em>: because the same input tensor feeds all
  * branches, the chain rule gives
- * {@code delL/delx = del_i (delL/dely_i · dely_i/delx)}, i.e. the contributions
+ * {@code dL/dx = sum_i (dL/dy_i * dy_i/dx)}, i.e. the contributions
  * are additive.
  *
  * <p><b>Mode propagation:</b> {@link #setMode} is overridden to propagate
@@ -54,14 +54,14 @@ import net.jamu.matrix.MatrixF;
  * <p><b>Parameter persistence:</b> {@link #storeParameters} is overridden to
  * delegate to all sub-layers in all branches.
  *
- * <h3>Example usage in a variational autoencoder</h3>
+ * <h2>Example usage in a variational autoencoder</h2>
  * <pre>{@code
  * // After the shared encoder the path splits into a "mu"- and a "logvar"-head:
  * net.add(new ParallelBranches(
  *     List.of(new Hidden(128, 16, "mu")),       // mu  branch rows [0..15]
  *     List.of(new Hidden(128, 16, "logvar"))    // logvar branch rows [16..31]
  * ));
- * // Returns (32 × m). The next layer is usually a ReparamLayer(16).
+ * // Returns (32 x m). The next layer is usually a VAEReparamLayer(16).
  * }</pre>
  */
 public class ParallelBranches extends AbstractLayer {
@@ -138,8 +138,8 @@ public class ParallelBranches extends AbstractLayer {
      * parameters and does not need to cache the input itself; each branch
      * layer caches its own input as required.
      *
-     * @param input the shared input matrix ({@code n × m})
-     * @return vertically stacked branch outputs ({@code (? k_i) × m})
+     * @param input the shared input matrix ({@code n x m})
+     * @return vertically stacked branch outputs ({@code (sum k_i) x m})
      */
     @Override
     public MatrixF forward(MatrixF input) {
@@ -164,9 +164,9 @@ public class ParallelBranches extends AbstractLayer {
      * branch in reverse order, and returns the element-wise sum of the
      * resulting input-side gradients.
      *
-     * @param grads        vertically stacked gradients ({@code (? k_i) × m})
+     * @param grads        vertically stacked gradients ({@code (sum k_i) x m})
      * @param learningRate the learning rate passed through to branch layers
-     * @return summed input-side gradients ({@code n × m}); {@code null} in
+     * @return summed input-side gradients ({@code n x m}); {@code null} in
      *         {@code INFER} mode
      */
     @Override
@@ -189,7 +189,7 @@ public class ParallelBranches extends AbstractLayer {
             while (it.hasPrevious()) {
                 g = it.previous().backward(g, learningRate);
             }
-            // Accumulate (chain rule: same input ? additive gradient terms).
+            // Accumulate (chain rule: same input -> additive gradient terms).
             if (summedInputGrads == null) {
                 summedInputGrads = g;
             } else {

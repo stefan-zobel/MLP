@@ -23,10 +23,10 @@ import net.jamu.matrix.MatrixF;
 /**
  * Reparameterization layer for a Variational Autoencoder (VAE).
  *
- * <h3>Input contract</h3>
- * Expects a {@code (2 * latentDim) × m} matrix whose first {@code latentDim}
- * rows are the posterior <em>mean vectors</em> ? and whose remaining rows are
- * the <em>log-variance vectors</em> log ?².  Such a matrix is naturally
+ * <h2>Input contract</h2>
+ * Expects a {@code (2 * latentDim) x m} matrix whose first {@code latentDim}
+ * rows are the posterior <em>mean vectors</em> &mu; and whose remaining rows are
+ * the <em>log-variance vectors</em> log &sigma;&sup2;.  Such a matrix is naturally
  * produced by a {@link ParallelBranches} layer with two heads of equal output
  * size:
  * <pre>{@code
@@ -37,31 +37,31 @@ import net.jamu.matrix.MatrixF;
  * net.add(new ReparamLayer(latentDim));
  * }</pre>
  *
- * <h3>Forward pass (TRAIN mode)</h3>
+ * <h2>Forward pass (TRAIN mode)</h2>
  * <ol>
- *   <li>Splits input into ? (rows 0..latentDim-1) and log ?²
- *       (rows latentDim..2·latentDim-1).</li>
- *   <li>Samples ? ~ N(0, I) element-wise.</li>
- *   <li>Computes ? = exp(log ?² / 2) and returns
- *       <b>z = ? + ? ? ?</b> &nbsp; (shape: {@code latentDim × m}).</li>
+ *   <li>Splits input into &mu; (rows 0..latentDim-1) and log &sigma;&sup2;
+ *       (rows latentDim..2&middot;latentDim-1).</li>
+ *   <li>Samples &epsilon; ~ N(0, I) element-wise.</li>
+ *   <li>Computes &sigma; = exp(log &sigma;&sup2; / 2) and returns
+ *       <b>z = &mu; + &sigma; &#8857; &epsilon;</b> &nbsp; (shape: {@code latentDim x m}).</li>
  * </ol>
- * ? and ? are cached for use in the backward pass.
+ * &epsilon; and &sigma; are cached for use in the backward pass.
  *
- * <h3>Forward pass (INFER mode)</h3>
- * Returns ? directly (deterministic encoding, no sampling).
+ * <h2>Forward pass (INFER mode)</h2>
+ * Returns &mu; directly (deterministic encoding, no sampling).
  *
- * <h3>Backward pass</h3>
- * Given the reconstruction gradient ?L_recon/?z from the downstream decoder,
+ * <h2>Backward pass</h2>
+ * Given the reconstruction gradient &part;L_recon/&part;z from the downstream decoder,
  * this layer adds the KL-divergence gradient contributions and returns the
- * combined gradient w.r.t. the concatenated input [{@code dL/d? ; dL/d(log ?²)}]
- * of shape {@code (2 * latentDim) × m}:
+ * combined gradient w.r.t. the concatenated input [{@code dL/dmu ; dL/d(log sigma^2)}]
+ * of shape {@code (2 * latentDim) x m}:
  * <ul>
- *   <li><b>?L/??</b> = ?L_recon/?z + ? · ?
- *       &nbsp;&nbsp;(KL term: ?KL/?? = ?)</li>
- *   <li><b>?L/?(log ?²)</b> = ?L_recon/?z ? ? ? ? / 2 + ? · (?² ? 1) / 2
- *       &nbsp;&nbsp;(chain rule + KL term: ?KL/?log ?² = (?²?1)/2)</li>
+ *   <li><b>&part;L/&part;&mu;</b> = &part;L_recon/&part;z + &lambda; &middot; &mu;
+ *       &nbsp;&nbsp;(KL term: &part;KL/&part;&mu; = &mu;)</li>
+ *   <li><b>&part;L/&part;(log &sigma;&sup2;)</b> = &part;L_recon/&part;z &#8857; &epsilon; &#8857; &sigma; / 2 + &lambda; &middot; (&sigma;&sup2; &minus; 1) / 2
+ *       &nbsp;&nbsp;(chain rule + KL term: &part;KL/&part;log &sigma;&sup2; = (&sigma;&sup2;&minus;1)/2)</li>
  * </ul>
- * where ? is the KL weight (1.0 for a standard VAE; set &lt; 1 for a ?-VAE
+ * where &lambda; is the KL weight (1.0 for a standard VAE; set &lt; 1 for a &beta;-VAE
  * to relax the bottleneck).
  *
  * <p>The returned gradient has exactly the shape of the forward input so that
@@ -72,24 +72,24 @@ public class VAEReparamLayer extends AbstractLayer {
     private final int latentDim;
 
     /**
-     * Weight ? applied to the KL-divergence gradient.  Use 1.0 for a standard
-     * VAE; smaller values (?-VAE) reduce the regularisation pressure and allow
+     * Weight &lambda; applied to the KL-divergence gradient.  Use 1.0 for a standard
+     * VAE; smaller values (&beta;-VAE) reduce the regularization pressure and allow
      * a more expressive latent space.
      */
     private final float klWeight;
 
     // State cached during forward() for use in backward()
-    private MatrixF mu;      // ? : latentDim × m
-    private MatrixF logVar;  // log ?² : latentDim × m
-    private MatrixF epsilon; // ? ~ N(0,I) : latentDim × m
-    private MatrixF sigma;   // ? = exp(logVar/2) : latentDim × m
+    private MatrixF mu;      // mu : latentDim x m
+    private MatrixF logVar;  // log sigma^2 : latentDim x m
+    private MatrixF epsilon; // eps ~ N(0,I) : latentDim x m
+    private MatrixF sigma;   // sigma = exp(logVar/2) : latentDim x m
 
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
 
     /**
-     * Creates a {@code ReparamLayer} with KL weight ? = 1.0 (standard VAE).
+     * Creates a {@code VAEReparamLayer} with KL weight &lambda; = 1.0 (standard VAE).
      *
      * @param latentDim dimensionality of the latent space
      */
@@ -98,10 +98,10 @@ public class VAEReparamLayer extends AbstractLayer {
     }
 
     /**
-     * Creates a {@code ReparamLayer} with an explicit KL weight (?-VAE).
+     * Creates a {@code VAEReparamLayer} with an explicit KL weight (&beta;-VAE).
      *
      * @param latentDim dimensionality of the latent space
-     * @param klWeight  weight ? applied to the KL-divergence gradient term
+     * @param klWeight  weight &lambda; applied to the KL-divergence gradient term
      */
     public VAEReparamLayer(int latentDim, float klWeight) {
         this.latentDim = latentDim;
@@ -114,13 +114,13 @@ public class VAEReparamLayer extends AbstractLayer {
 
     /**
      * Applies the reparameterization trick:
-     * z = ? + ? ? ?, &nbsp; ? ~ N(0, I).
+     * z = &mu; + &sigma; &#8857; &epsilon;, &nbsp; &epsilon; ~ N(0, I).
      *
-     * <p>In {@code INFER} mode returns ? directly without sampling.
+     * <p>In {@code INFER} mode returns &mu; directly without sampling.
      *
-     * @param input (2·latentDim × m) matrix: rows 0..latentDim-1 = ?,
-     *              rows latentDim..2·latentDim-1 = log ?²
-     * @return z of shape (latentDim × m) in TRAIN mode, ? in INFER mode
+     * @param input (2&middot;latentDim &times; m) matrix: rows 0..latentDim-1 = &mu;,
+     *              rows latentDim..2&middot;latentDim-1 = log &sigma;&sup2;
+     * @return z of shape (latentDim &times; m) in TRAIN mode, &mu; in INFER mode
      */
     @Override
     public MatrixF forward(MatrixF input) {
@@ -152,12 +152,12 @@ public class VAEReparamLayer extends AbstractLayer {
 
     /**
      * Computes the combined gradient w.r.t. the concatenated input
-     * [? ; log ?²], incorporating both the reconstruction gradient and the
+     * [&mu; ; log &sigma;&sup2;], incorporating both the reconstruction gradient and the
      * KL-divergence gradient.
      *
-     * @param dLdz the gradient ?L_recon/?z arriving from the decoder
-     *             (latentDim × m)
-     * @return [?L/?? ; ?L/?(log ?²)] of shape (2·latentDim × m);
+     * @param dLdz the gradient &part;L_recon/&part;z arriving from the decoder
+     *             (latentDim &times; m)
+     * @return [&part;L/&part;&mu; ; &part;L/&part;(log &sigma;&sup2;)] of shape (2&middot;latentDim &times; m);
      *         {@code null} in INFER mode
      */
     @Override
@@ -175,14 +175,14 @@ public class VAEReparamLayer extends AbstractLayer {
                 float sig    = sigma.getUnsafe(r, c);
                 float eps    = epsilon.getUnsafe(r, c);
                 float muVal  = mu.getUnsafe(r, c);
-                float sigSq  = sig * sig; // ?²
+                float sigSq  = sig * sig; // sigma^2
 
-                // ?L/?? = ?L_recon/?z  +  ? · ?
-                //         (decoder grad)  (KL: ?KL/?? = ?)
+                // dL/dmu = dL_recon/dz  +  lambda * mu
+                //         (decoder grad)  (KL: dKL/dmu = mu)
                 dLdMu.setUnsafe(r, c, grad + klWeight * muVal);
 
-                // ?L/?(log ?²) = ?L_recon/?z · ? · ? / 2  +  ? · (?² ? 1) / 2
-                //                (chain rule ?z/?logVar)    (KL: ?KL/?logVar)
+                // dL/d(log sigma^2) = dL_recon/dz * eps * sigma / 2  +  lambda * (sigma^2 - 1) / 2
+                //                (chain rule dz/dlogVar)    (KL: dKL/dlogVar)
                 dLdLogVar.setUnsafe(r, c,
                         grad * eps * sig * 0.5f + klWeight * (sigSq - 1.0f) * 0.5f);
             }
@@ -194,7 +194,7 @@ public class VAEReparamLayer extends AbstractLayer {
         epsilon = null;
         sigma   = null;
 
-        // Return [?L/?? ; ?L/?(log ?²)] – same row layout as the forward input,
+        // Return [dL/dmu ; dL/d(log sigma^2)] - same row layout as the forward input,
         // so ParallelBranches.backward() can split it without any extra knowledge.
         return stackRows(dLdMu, dLdLogVar);
     }

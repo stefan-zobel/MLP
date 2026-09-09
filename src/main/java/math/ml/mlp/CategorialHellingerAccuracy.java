@@ -26,9 +26,14 @@ public final class CategorialHellingerAccuracy {
     /**
      * Calculation of the accuracy of a categorial classifier.
      * 
-     * @param pred
-     * @param expect
-     * @return
+     * @param pred   predicted class probability distributions, one sample
+     *               per column
+     * @param expect expected class probability distributions (usually
+     *               one-hot), one sample per column, same shape as
+     *               {@code pred}
+     * @return the mean Hellinger similarity over all columns, in the range
+     *         {@code [0, 1]}, where {@code 1} means the two distributions
+     *         are identical
      */
     public static double computeAccuracy(MatrixF pred, MatrixF expect) {
         double accuracy = 0.0;

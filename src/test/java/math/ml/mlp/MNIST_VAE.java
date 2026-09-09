@@ -27,31 +27,31 @@ import net.jamu.matrix.Statistics;
 /**
  * A Variational Autoencoder (VAE) trained on MNIST.
  *
- * <h3>Architecture overview</h3>
+ * <h2>Architecture overview</h2>
  * <pre>
  *  Input (784)
- *      ?
- *  Hidden(784?256) + ReLU          ? shared encoder
- *      ?
- *  Hidden(256?128) + ReLU          ? shared encoder
- *      ?
- *  ???? ParallelBranches ????????????????????????????????
- *  ?  Branch 0: Hidden(128?LATENT)  ? ?   (LATENT × m) ?
- *  ?  Branch 1: Hidden(128?LATENT)  ? log?²(LATENT × m)?
- *  ???????????????????????????????????????????????????????
- *      ?  (2·LATENT × m, rows [0..LATENT-1]=?, [LATENT..2·LATENT-1]=log?²)
- *  ReparamLayer(LATENT)             ? z = ? + ???, adds KL gradient in bwd
- *      ?  (LATENT × m)
- *  Hidden(LATENT?128) + ReLU       ? decoder
- *      ?
- *  Hidden(128?256)    + ReLU       ? decoder
- *      ?
- *  Hidden(256?784)    + Sigmoid    ? reconstruction in (0,1)
- *      ?
- *  BinaryCrossEntropyLoss           ? reconstruction loss (targets = inputs)
+ *      &darr;
+ *  Hidden(784&rarr;256) + ReLU          &larr; shared encoder
+ *      &darr;
+ *  Hidden(256&rarr;128) + ReLU          &larr; shared encoder
+ *      &darr;
+ *  +-- ParallelBranches -----------------------------------+
+ *  |  Branch 0: Hidden(128&rarr;LATENT)  &rarr; &mu;      (LATENT &times; m) |
+ *  |  Branch 1: Hidden(128&rarr;LATENT)  &rarr; log &sigma;&sup2;  (LATENT &times; m) |
+ *  +-------------------------------------------------------+
+ *      &darr;  (2&middot;LATENT &times; m, rows [0..LATENT-1]=&mu;, [LATENT..2&middot;LATENT-1]=log &sigma;&sup2;)
+ *  VAEReparamLayer(LATENT)          &larr; z = &mu; + &sigma;&#8857;&epsilon;, adds KL gradient in bwd
+ *      &darr;  (LATENT &times; m)
+ *  Hidden(LATENT&rarr;128) + ReLU       &larr; decoder
+ *      &darr;
+ *  Hidden(128&rarr;256)    + ReLU       &larr; decoder
+ *      &darr;
+ *  Hidden(256&rarr;784)    + Sigmoid    &larr; reconstruction in (0,1)
+ *      &darr;
+ *  BinaryCrossEntropyLoss           &larr; reconstruction loss (targets = inputs)
  * </pre>
  *
- * <h3>No changes to AbstractNetwork.train() necessary</h3>
+ * <h2>No changes to AbstractNetwork.train() necessary</h2>
  * The outer training loop in {@link AbstractNetwork#train} sees a strictly
  * sequential list of layers and is completely unaware of the internal
  * branching structure inside {@link ParallelBranches}. The split/merge
@@ -63,7 +63,7 @@ import net.jamu.matrix.Statistics;
  *       gradient, routes each slice through its branch in reverse, and sums
  *       the input-side gradients (chain rule).</li>
  *   <li>The KL-divergence gradient is injected by
- *       {@code ReparamLayer.backward()} – no separate loss term needed.</li>
+ *       {@code VAEReparamLayer.backward()} &ndash; no separate loss term needed.</li>
  * </ul>
  */
 public class MNIST_VAE extends AbstractNetwork {
@@ -135,13 +135,13 @@ public class MNIST_VAE extends AbstractNetwork {
         net.add(new Hidden(256, 128, "enc2"));
         net.add(new Relu());
 
-        // --- Split: ? and log ?² heads ------------------------------------
+        // --- Split: mu and log sigma^2 heads ------------------------------
         net.add(new ParallelBranches(
                 List.of(new Hidden(128, LATENT_DIM, "mu")),      // rows [0..LATENT_DIM-1]
                 List.of(new Hidden(128, LATENT_DIM, "logvar"))   // rows [LATENT_DIM..2*LATENT_DIM-1]
         ));
 
-        // --- Reparameterization + KL gradient (? = 1.0) ------------------
+        // --- Reparameterization + KL gradient (lambda = 1.0) -------------
         net.add(new VAEReparamLayer(LATENT_DIM));
 
         // --- Decoder ------------------------------------------------------
@@ -205,7 +205,7 @@ public class MNIST_VAE extends AbstractNetwork {
             for (int r = 0; r < rows; r++) {
                 float rawP = pred.getUnsafe(r, c);
                 // Clamp p and (1-p) independently from the raw prediction.
-                // Using 1.0 - clamp(1-p) would cause log(0) when rawP ? 0,
+                // Using 1.0 - clamp(1-p) would cause log(0) when rawP ~= 0,
                 // because 1.0f - rawP rounds to 1.0f (float underflow) and
                 // clamp(1.0f) = 1.0f, so 1.0 - 1.0f = 0.0 exactly -> log(0) = -Inf.
                 float p = clamp(rawP);

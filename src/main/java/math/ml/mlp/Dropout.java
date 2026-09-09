@@ -22,6 +22,8 @@ import net.jamu.matrix.MatrixF;
 
 public class Dropout extends AbstractLayer {
 
+    private static final XorShiftRot256StarStar prng = new XorShiftRot256StarStar();
+
     private final float dropoutRate;
     private final float scalingFactor;
     private BitSet mask = new BitSet(0);
@@ -83,6 +85,6 @@ public class Dropout extends AbstractLayer {
     }
 
     private boolean dropout() {
-        return XorShiftRot256StarStar.getDefault().nextFloat() < dropoutRate;
+        return prng.nextFloat() < dropoutRate;
     }
 }

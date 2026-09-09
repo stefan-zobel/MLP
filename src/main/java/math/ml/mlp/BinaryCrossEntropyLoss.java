@@ -24,29 +24,29 @@ import net.jamu.matrix.MatrixF;
  * <p>Suitable as the reconstruction term in a Variational Autoencoder when the
  * final decoder activation is {@link Sigmoid} (output values in (0, 1)).
  *
- * <h3>Loss per sample</h3>
+ * <h2>Loss per sample</h2>
  * <pre>
- *   L = ?(1 / dim) · ?_i [ t_i · log(p_i) + (1 ? t_i) · log(1 ? p_i) ]
+ *   L = &minus;(1 / dim) &middot; &sum;_i [ t_i &middot; log(p_i) + (1 &minus; t_i) &middot; log(1 &minus; p_i) ]
  * </pre>
  * where {@code dim} is the number of output elements (e.g. 784 for MNIST),
  * {@code t} is the reconstruction target (the original input image, values in
  * [0, 1]) and {@code p} is the sigmoid-activated decoder prediction.
  *
- * <h3>Gradient returned by {@link #forward}</h3>
+ * <h2>Gradient returned by {@link #forward}</h2>
  * <pre>
- *   ?L/?p_i = (p_i ? t_i) / [ p_i · (1 ? p_i) ]
+ *   &part;L/&part;p_i = (p_i &minus; t_i) / [ p_i &middot; (1 &minus; p_i) ]
  * </pre>
  * <b>Note on numerical stability:</b> when this layer is immediately preceded
  * by a {@link Sigmoid} layer the backward pass automatically computes the
  * combined gradient at the sigmoid <em>input</em>:
  * <pre>
- *   ?L/?x_i = ?L/?p_i · ?'(x_i)
- *            = (p_i ? t_i) / [p·(1?p)] · p·(1?p)
- *            = p_i ? t_i
+ *   &part;L/&part;x_i = &part;L/&part;p_i &middot; &sigma;'(x_i)
+ *            = (p_i &minus; t_i) / [p&middot;(1&minus;p)] &middot; p&middot;(1&minus;p)
+ *            = p_i &minus; t_i
  * </pre>
- * So the p·(1?p) terms cancel and the result is perfectly well-behaved.
+ * So the p&middot;(1&minus;p) terms cancel and the result is perfectly well-behaved.
  *
- * <h3>Usage in a VAE network</h3>
+ * <h2>Usage in a VAE network</h2>
  * <pre>{@code
  * BinaryCrossEntropyLoss bce = new BinaryCrossEntropyLoss();
  * bce.registerLossCallback(net::onLossComputationCompleted);
@@ -65,8 +65,8 @@ public class BinaryCrossEntropyLoss extends AbstractLoss {
      * registered) and returns the gradient w.r.t. the predictions.
      *
      * @param prediction sigmoid-activated decoder output (values in (0, 1)),
-     *                   shape {@code dim × batchSize}
-     * @return gradient ?L/?prediction, same shape as {@code prediction}
+     *                   shape {@code dim x batchSize}
+     * @return gradient &part;L/&part;prediction, same shape as {@code prediction}
      */
     @Override
     public MatrixF forward(MatrixF prediction) {

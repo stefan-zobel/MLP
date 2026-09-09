@@ -41,28 +41,28 @@ import net.jamu.matrix.MatrixF;
  * {@code IllegalStateException} is thrown in {@link #forward} if this
  * constraint is violated.
  *
- * <h3>Forward pass</h3>
+ * <h2>Forward pass</h2>
  * <pre>
  *   y = x + F(x)
  * </pre>
  * A defensive copy of {@code x} is passed into the branch so that any
  * in-place layer (e.g. {@link Dropout}) cannot corrupt the identity path.
  *
- * <h3>Backward pass</h3>
+ * <h2>Backward pass</h2>
  * Chain rule for {@code y = x + F(x)}:
  * <pre>
- *   ?L/?x = ?L/?y · ?y/?x = ?L/?y · (I + ?F/?x)
- *          = ?L/?y  +  F.backward(?L/?y)
+ *   &part;L/&part;x = &part;L/&part;y &middot; &part;y/&part;x = &part;L/&part;y &middot; (I + &part;F/&part;x)
+ *          = &part;L/&part;y  +  F.backward(&part;L/&part;y)
  * </pre>
- * The identity path contributes {@code ?L/?y} unchanged; the branch
+ * The identity path contributes {@code dL/dy} unchanged; the branch
  * contributes the result of its own backward pass through all branch layers.
  * Their sum is returned as the gradient w.r.t. the input.
  *
- * <p>A defensive copy of {@code ?L/?y} is also passed to the branch
+ * <p>A defensive copy of {@code dL/dy} is also passed to the branch
  * backward so that any in-place backward (e.g. {@link Dropout#backward})
  * cannot corrupt the gradient used for the identity path.
  *
- * <h3>Typical usage</h3>
+ * <h2>Typical usage</h2>
  * <pre>{@code
  * // Residual block with BN and ReLU inside:
  * net.add(new ResidualBranch(
@@ -128,7 +128,7 @@ public class ResidualBranch extends AbstractLayer {
      * Computes {@code y = x + F(x)}.
      *
      * <p>Note: {@code super.forward(input)} is intentionally <em>not</em>
-     * called – {@code ResidualBranch} has no own parameters and the branch
+     * called &ndash; {@code ResidualBranch} has no own parameters and the branch
      * layers cache their own inputs.
      *
      * @param input the shared input {@code x}
@@ -149,9 +149,9 @@ public class ResidualBranch extends AbstractLayer {
                 || branchOut.numColumns() != input.numColumns()) {
             throw new IllegalStateException(
                     "ResidualBranch: branch output shape ("
-                    + branchOut.numRows() + "×" + branchOut.numColumns()
+                    + branchOut.numRows() + "x" + branchOut.numColumns()
                     + ") must equal input shape ("
-                    + input.numRows() + "×" + input.numColumns() + ")");
+                    + input.numRows() + "x" + input.numColumns() + ")");
         }
 
         // y = x + F(x)
@@ -162,9 +162,9 @@ public class ResidualBranch extends AbstractLayer {
     }
 
     /**
-     * Returns {@code ?L/?y + F.backward(?L/?y)}.
+     * Returns {@code dL/dy + F.backward(dL/dy)}.
      *
-     * @param grads {@code ?L/?y}, the gradient w.r.t. the output of this layer
+     * @param grads {@code dL/dy}, the gradient w.r.t. the output of this layer
      * @return gradient w.r.t. the input {@code x}; {@code null} in INFER mode
      */
     @Override
@@ -182,7 +182,7 @@ public class ResidualBranch extends AbstractLayer {
             branchGrads = it.previous().backward(branchGrads, learningRate);
         }
 
-        // ?L/?x = grads (identity path) + branchGrads (transformation path)
+        // dL/dx = grads (identity path) + branchGrads (transformation path)
         MatrixF result = Matrices.createF(grads.numRows(), grads.numColumns());
         result.addInplace(1.0f, grads);
         result.addInplace(1.0f, branchGrads);

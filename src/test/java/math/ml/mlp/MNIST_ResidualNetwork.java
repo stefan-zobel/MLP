@@ -27,33 +27,33 @@ import net.jamu.matrix.Statistics;
  * MNIST classifier demonstrating the use of {@link BatchNorm},
  * {@link ResidualBranch}, and {@link Dropout}.
  *
- * <h3>Network architecture</h3>
+ * <h2>Network architecture</h2>
  * <pre>
  *  Input (784)
- *      ?
- *  Hidden(784 ? 256)
- *  BatchNorm(256)          ? normalizes activations across the batch
+ *      &darr;
+ *  Hidden(784 &rarr; 256)
+ *  BatchNorm(256)          &larr; normalizes activations across the batch
  *  ReLU
- *  Dropout(0.15)           ? fixed mask indexing
- *      ?
- *  ??? ResidualBranch ??????????????????????????????????
- *  ?   Hidden(256 ? 256)                               ?
- *  ?   BatchNorm(256)                                  ?
- *  ?   ReLU                                            ?
- *  ?????? y = x + F(x) ????????????????????????????????
- *      ?
+ *  Dropout(0.15)           &larr; fixed mask indexing
+ *      &darr;
+ *  +-- ResidualBranch --------------------------------+
+ *  |   Hidden(256 &rarr; 256)                              |
+ *  |   BatchNorm(256)                                 |
+ *  |   ReLU                                           |
+ *  +-- y = x + F(x) ----------------------------------+
+ *      &darr;
  *  Dropout(0.10)
- *      ?
- *  Hidden(256 ? 10)
+ *      &darr;
+ *  Hidden(256 &rarr; 10)
  *  SoftmaxCrossEntropyLoss
  * </pre>
  *
- * <h3>Why BatchNorm before the residual block?</h3>
+ * <h2>Why BatchNorm before the residual block?</h2>
  * The input to the residual branch and to the identity shortcut must share the
  * same distribution.  Placing BatchNorm before the block ensures both paths
  * see a well-normalized signal.
  *
- * <h3>Why copy-on-entry in ResidualBranch?</h3>
+ * <h2>Why copy-on-entry in ResidualBranch?</h2>
  * {@link Dropout} modifies its input matrix in place.  Without a defensive
  * copy the identity shortcut would receive the already-dropped-out values,
  * corrupting the residual connection.
@@ -134,12 +134,12 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
 
         // --- Layer 1: linear + BN + ReLU + Dropout --------------------------
         net.add(new Hidden(INPUT_SIZE, 256, "l1"));
-        net.add(new BatchNorm(256));           // ? BatchNorm stabilizes training
+        net.add(new BatchNorm(256));           // <- BatchNorm stabilizes training
         net.add(new Relu());
-        net.add(new Dropout(0.15f));           // ? fixed Dropout
+        net.add(new Dropout(0.15f));           // <- fixed Dropout
 
         // --- Layer 2: residual block (skip connection) ----------------------
-        net.add(new ResidualBranch(            // ? ResidualBranch
+        net.add(new ResidualBranch(            // <- ResidualBranch
                 new Hidden(256, 256, "res1"),
                 new BatchNorm(256),
                 new Relu()

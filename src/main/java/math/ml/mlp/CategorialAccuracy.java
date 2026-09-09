@@ -26,9 +26,13 @@ public final class CategorialAccuracy {
     /**
      * Calculation of the accuracy of a categorial classifier.
      * 
-     * @param pred
-     * @param expect
-     * @return
+     * @param pred   predicted class probability distributions, one sample
+     *               per column
+     * @param expect expected class probability distributions (usually
+     *               one-hot), one sample per column, same shape as
+     *               {@code pred}
+     * @return the fraction of columns whose highest-probability row agrees
+     *         in both matrices, in the range {@code [0, 1]}
      */
     public static double computeAccuracy(MatrixF pred, MatrixF expect) {
         MultiClassAccuracy multiClass = new MultiClassAccuracy();

@@ -22,35 +22,35 @@ import net.jamu.matrix.MatrixF;
  * Batch Normalization layer (Ioffe &amp; Szegedy, 2015).
  *
  * <p>Normalizes each feature (row) across the mini-batch dimension (columns),
- * then applies learnable per-feature scale {@code ?} and shift {@code ?}.
+ * then applies learnable per-feature scale {@code gamma} and shift {@code beta}.
  * This stabilizes and accelerates training, especially in deeper networks.
  * Typical placement is <em>after</em> a linear layer and <em>before</em> the
- * activation: {@code Hidden ? BatchNorm ? ReLU}.
+ * activation: {@code Hidden -> BatchNorm -> ReLU}.
  *
- * <h3>Forward pass (TRAIN)</h3>
+ * <h2>Forward pass (TRAIN)</h2>
  * For each feature {@code j} and batch index {@code i}:
  * <pre>
- *   ?_j     = (1/m) ?_i x_{ji}
- *   ?²_j    = (1/m) ?_i (x_{ji} ? ?_j)²
- *   x?_{ji}  = (x_{ji} ? ?_j) / ?(?²_j + ?)
- *   y_{ji}  = ?_j · x?_{ji} + ?_j
+ *   &mu;_j     = (1/m) &sum;_i x_{ji}
+ *   &sigma;&sup2;_j    = (1/m) &sum;_i (x_{ji} &minus; &mu;_j)&sup2;
+ *   x&#770;_{ji}  = (x_{ji} &minus; &mu;_j) / &radic;(&sigma;&sup2;_j + &epsilon;)
+ *   y_{ji}  = &gamma;_j &middot; x&#770;_{ji} + &beta;_j
  * </pre>
  * Running statistics are updated for use during inference:
  * <pre>
- *   runningMean ? (1?m) · runningMean + m · ?_batch
- *   runningVar  ? (1?m) · runningVar  + m · ?²_batch
+ *   runningMean &larr; (1&minus;m) &middot; runningMean + m &middot; &mu;_batch
+ *   runningVar  &larr; (1&minus;m) &middot; runningVar  + m &middot; &sigma;&sup2;_batch
  * </pre>
  * where {@code m} is {@code momentum} (default 0.1).
  *
- * <h3>Forward pass (INFER)</h3>
+ * <h2>Forward pass (INFER)</h2>
  * Uses the accumulated running statistics:
  * <pre>
- *   y_{ji} = ?_j · (x_{ji} ? runningMean_j) / ?(runningVar_j + ?) + ?_j
+ *   y_{ji} = &gamma;_j &middot; (x_{ji} &minus; runningMean_j) / &radic;(runningVar_j + &epsilon;) + &beta;_j
  * </pre>
  *
- * <h3>Backward pass</h3>
- * Full analytic gradient through all three statistics.  Updates {@code ?} and
- * {@code ?} in place (averaged over the batch, consistent with
+ * <h2>Backward pass</h2>
+ * Full analytic gradient through all three statistics.  Updates {@code gamma} and
+ * {@code beta} in place (averaged over the batch, consistent with
  * {@link Hidden#backward}).
  */
 public class BatchNorm extends AbstractLayer {
@@ -60,25 +60,25 @@ public class BatchNorm extends AbstractLayer {
     /** Weight for new batch statistics in the running-average update. */
     private final float   momentum;
 
-    // Learnable parameters (features × 1)
+    // Learnable parameters (features x 1)
     private final MatrixF gamma;       // scale,  initialized to 1
     private final MatrixF beta;        // shift,  initialized to 0
 
-    // Running statistics for inference (features × 1)
+    // Running statistics for inference (features x 1)
     private final MatrixF runningMean; // initialized to 0
     private final MatrixF runningVar;  // initialized to 1
 
     // Cached during TRAIN forward for use in backward
-    private MatrixF xHat;      // normalized input    (features × batchSize)
-    private MatrixF batchMean; // per-feature mean    (features × 1)
-    private MatrixF invStd;    // 1/?(var+?) per row  (features × 1)
+    private MatrixF xHat;      // normalized input    (features x batchSize)
+    private MatrixF batchMean; // per-feature mean    (features x 1)
+    private MatrixF invStd;    // 1/sqrt(var+eps) per row  (features x 1)
 
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
 
     /**
-     * Creates a BatchNorm layer with default {@code ? = 1e-5} and
+     * Creates a BatchNorm layer with default {@code eps = 1e-5} and
      * {@code momentum = 0.1}.
      *
      * @param features number of input features (= number of rows of the input
@@ -108,7 +108,7 @@ public class BatchNorm extends AbstractLayer {
         runningMean = Matrices.createF(features, 1);
         runningVar  = Matrices.createF(features, 1);
 
-        // ? = 1, runningVar = 1; ? and runningMean stay 0
+        // gamma = 1, runningVar = 1; beta and runningMean stay 0
         for (int i = 0; i < features; i++) {
             gamma.setUnsafe(i, 0, 1.0f);
             runningVar.setUnsafe(i, 0, 1.0f);
@@ -157,7 +157,7 @@ public class BatchNorm extends AbstractLayer {
             invStd.setUnsafe(r, 0, 1.0f / (float) Math.sqrt(var + eps));
         }
 
-        // 3. Normalize and apply ?/?; cache x? for backward
+        // 3. Normalize and apply gamma/beta; cache xHat for backward
         xHat = Matrices.createF(d, m);
         MatrixF output = Matrices.createF(d, m);
         for (int r = 0; r < d; r++) {
@@ -186,17 +186,17 @@ public class BatchNorm extends AbstractLayer {
 
     /**
      * Backpropagates through the full batch-normalization computation:
-     * updates {@code ?} and {@code ?} (averaged over the batch) and returns
+     * updates {@code gamma} and {@code beta} (averaged over the batch) and returns
      * the gradient w.r.t. the input.
      *
      * <p>Derivation (per feature {@code r}):
      * <pre>
-     *   dL/dx?[r,c]  = dLdy[r,c] · ?_r
-     *   dL/d?²_r    = ?_c dL/dx?[r,c] · (x[r,c]??_r) · (?½) · invStd³
-     *   dL/d?_r     = ?invStd · ?_c dL/dx?[r,c]       (sum(x??)=0 term vanishes)
-     *   dL/dx[r,c]  = dL/dx?[r,c]·invStd
-     *               + dL/d?²_r · 2·(x[r,c]??_r)/m
-     *               + dL/d?_r / m
+     *   dL/dx&#770;[r,c]  = dLdy[r,c] &middot; &gamma;_r
+     *   dL/d&sigma;&sup2;_r    = &sum;_c dL/dx&#770;[r,c] &middot; (x[r,c]&minus;&mu;_r) &middot; (&minus;&frac12;) &middot; invStd&sup3;
+     *   dL/d&mu;_r     = &minus;invStd &middot; &sum;_c dL/dx&#770;[r,c]       (sum(x&minus;&mu;)=0 term vanishes)
+     *   dL/dx[r,c]  = dL/dx&#770;[r,c]&middot;invStd
+     *               + dL/d&sigma;&sup2;_r &middot; 2&middot;(x[r,c]&minus;&mu;_r)/m
+     *               + dL/d&mu;_r / m
      * </pre>
      */
     @Override
@@ -213,7 +213,7 @@ public class BatchNorm extends AbstractLayer {
             float iStd = invStd.getUnsafe(r, 0);
             float mean = batchMean.getUnsafe(r, 0);
 
-            // --- ? and ? updates (averaged over batch) ---
+            // --- gamma and beta updates (averaged over batch) ---
             float dGamma = 0.0f, dBeta = 0.0f;
             for (int c = 0; c < m; c++) {
                 float dl = dLdy.getUnsafe(r, c);
@@ -223,15 +223,15 @@ public class BatchNorm extends AbstractLayer {
             gamma.setUnsafe(r, 0, g                        - learningRate * dGamma / m);
             beta.setUnsafe(r, 0,  beta.getUnsafe(r, 0)     - learningRate * dBeta  / m);
 
-            // --- dL/d?²_r ---
+            // --- dL/dvar_r ---
             float dVar = 0.0f;
             for (int c = 0; c < m; c++) {
                 float dxhat = dLdy.getUnsafe(r, c) * g;
                 dVar += dxhat * (input.getUnsafe(r, c) - mean);
             }
-            dVar *= -0.5f * iStd * iStd * iStd; // multiply by ?½ · invStd³
+            dVar *= -0.5f * iStd * iStd * iStd; // multiply by -1/2 * invStd^3
 
-            // --- dL/d?_r  (the variance-path term vanishes: ?(x??)=0) ---
+            // --- dL/dmean_r  (the variance-path term vanishes: sum(x-mean)=0) ---
             float dMean = 0.0f;
             for (int c = 0; c < m; c++) {
                 dMean += dLdy.getUnsafe(r, c) * g;
@@ -263,7 +263,7 @@ public class BatchNorm extends AbstractLayer {
     // -------------------------------------------------------------------------
 
     /**
-     * Applies the affine transform {@code y = ?·(x?mean)/?(var+?) + ?}
+     * Applies the affine transform {@code y = gamma*(x-mean)/sqrt(var+eps) + beta}
      * using the supplied statistics (used for inference with running stats).
      */
     private MatrixF applyAffine(MatrixF x, MatrixF mean, MatrixF var, int d, int m) {
