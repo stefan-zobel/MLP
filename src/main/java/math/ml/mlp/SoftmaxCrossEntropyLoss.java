@@ -63,6 +63,11 @@ public class SoftmaxCrossEntropyLoss extends AbstractLoss {
         return gradsOut;
     }
 
+    @Override
+    public boolean producesPredictionInInferMode() {
+        return true;
+    }
+
     private MatrixF computeGradients(MatrixF pred, MatrixF expect) {
         return pred.minus(expect);
     }

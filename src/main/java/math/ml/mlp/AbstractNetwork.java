@@ -54,9 +54,10 @@ public abstract class AbstractNetwork implements TrainableNetwork {
         ListIterator<Layer> it = layers.listIterator(layers.size());
         while (it.hasPrevious()) {
             Layer layer = it.previous();
-            if (layer instanceof Loss && !(layer instanceof SoftmaxCrossEntropyLoss)) {
-                // a Loss returns the gradient from its forward() method, its backward() method
-                // does nothing
+            if (layer instanceof Loss loss && !loss.producesPredictionInInferMode()) {
+                // a plain Loss returns the gradient from its forward() method, its
+                // backward() method does nothing. A fused loss keeps the gradient and
+                // hands it back from backward(), so it stays in the chain.
                 continue;
             }
             // propagate the gradients backwards to the previous layer
@@ -70,12 +71,12 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     public MatrixF infer(MatrixF input) {
         for (Layer layer : layers) {
             layer.setMode(NetworkMode.INFER);
-            if (layer instanceof Loss && !(layer instanceof SoftmaxCrossEntropyLoss)) {
-                // a Loss would return the gradient from its forward() method which is not a
-                // prediction, also it may call callbacks which might not have a sensible
-                // implementation if we are doing inference only, so skip this.
-                // SoftmaxCrossEntropyLoss is an exception as it behaves like Softmax in INFER
-                // mode. We assume that a Loss, if there is any, is always the last layer
+            if (layer instanceof Loss loss && !loss.producesPredictionInInferMode()) {
+                // a plain Loss would return the gradient from its forward() method which is
+                // not a prediction, also it may call callbacks which might not have a
+                // sensible implementation if we are doing inference only, so skip this.
+                // A fused loss is an exception as it applies its output activation itself.
+                // We assume that a Loss, if there is any, is always the last layer
                 break;
             }
             input = layer.forward(input);

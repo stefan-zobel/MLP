@@ -34,4 +34,15 @@ public interface Loss extends Layer {
     default MatrixF backward(MatrixF unused1, float unused2) {
         return null;
     }
+
+    /**
+     * Whether this loss also yields a usable prediction in
+     * {@link NetworkMode#INFER} mode, which the fused losses do because they
+     * apply the output activation themselves.
+     *
+     * @return {@code true} if this loss produces a prediction in INFER mode
+     */
+    default boolean producesPredictionInInferMode() {
+        return false;
+    }
 }
