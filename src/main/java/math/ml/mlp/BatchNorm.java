@@ -103,16 +103,11 @@ public class BatchNorm extends AbstractLayer {
         this.eps      = eps;
         this.momentum = momentum;
 
-        gamma       = Matrices.createF(features, 1);
+        // gamma = 1, runningVar = 1; beta and runningMean stay 0
+        gamma       = Matrices.onesF(features, 1);
         beta        = Matrices.createF(features, 1);
         runningMean = Matrices.createF(features, 1);
-        runningVar  = Matrices.createF(features, 1);
-
-        // gamma = 1, runningVar = 1; beta and runningMean stay 0
-        for (int i = 0; i < features; i++) {
-            gamma.setUnsafe(i, 0, 1.0f);
-            runningVar.setUnsafe(i, 0, 1.0f);
-        }
+        runningVar  = Matrices.onesF(features, 1);
     }
 
     // -------------------------------------------------------------------------
@@ -127,59 +122,28 @@ public class BatchNorm extends AbstractLayer {
         int m = input.numColumns();
 
         if (mode == NetworkMode.INFER) {
-            return applyAffine(input, runningMean, runningVar, d, m);
+            return applyAffine(input, runningMean, runningVar);
         }
 
         // --- TRAIN ---
 
-        // 1. Batch mean per feature (row)
-        batchMean = Matrices.createF(d, 1);
-        for (int r = 0; r < d; r++) {
-            float sum = 0.0f;
-            for (int c = 0; c < m; c++) {
-                sum += input.getUnsafe(r, c);
-            }
-            batchMean.setUnsafe(r, 0, sum / m);
-        }
+        // 1. Batch mean per feature; colsAverage collapses the columns, so the
+        //    result is the d x 1 per-row mean
+        batchMean = Matrices.colsAverage(input);
 
-        // 2. Batch variance + inverse std-dev per feature
-        invStd = Matrices.createF(d, 1);
-        MatrixF batchVar = Matrices.createF(d, 1);
-        for (int r = 0; r < d; r++) {
-            float mean = batchMean.getUnsafe(r, 0);
-            float var  = 0.0f;
-            for (int c = 0; c < m; c++) {
-                float diff = input.getUnsafe(r, c) - mean;
-                var += diff * diff;
-            }
-            var /= m;
-            batchVar.setUnsafe(r, 0, var);
-            invStd.setUnsafe(r, 0, 1.0f / (float) Math.sqrt(var + eps));
-        }
+        // 2. Batch variance and inverse standard deviation per feature
+        MatrixF centered = input.plusBroadcastedVector(batchMean.uminus());
+        MatrixF batchVar = Matrices.colsAverage(centered.hadamard(centered));
+        float epsilon = eps;
+        invStd = batchVar.map(v -> (float) (1.0 / Math.sqrt(v + epsilon)));
 
         // 3. Normalize and apply gamma/beta; cache xHat for backward
-        xHat = Matrices.createF(d, m);
-        MatrixF output = Matrices.createF(d, m);
-        for (int r = 0; r < d; r++) {
-            float mean = batchMean.getUnsafe(r, 0);
-            float iStd = invStd.getUnsafe(r, 0);
-            float g    = gamma.getUnsafe(r, 0);
-            float b    = beta.getUnsafe(r, 0);
-            for (int c = 0; c < m; c++) {
-                float xn = (input.getUnsafe(r, c) - mean) * iStd;
-                xHat.setUnsafe(r, c, xn);
-                output.setUnsafe(r, c, g * xn + b);
-            }
-        }
+        xHat = MatrixOps.mulRowsInplace(centered, invStd);
+        MatrixF output = MatrixOps.mulRowsInplace(xHat.copy(), gamma).addBroadcastedVectorInplace(beta);
 
         // 4. Update running statistics (exponential moving average)
-        float keepWeight = 1.0f - momentum;
-        for (int r = 0; r < d; r++) {
-            runningMean.setUnsafe(r, 0,
-                    keepWeight * runningMean.getUnsafe(r, 0) + momentum * batchMean.getUnsafe(r, 0));
-            runningVar.setUnsafe(r, 0,
-                    keepWeight * runningVar.getUnsafe(r, 0)  + momentum * batchVar.getUnsafe(r, 0));
-        }
+        runningMean.scaleInplace(1.0f - momentum).addInplace(momentum, batchMean);
+        runningVar.scaleInplace(1.0f - momentum).addInplace(momentum, batchVar);
 
         return output;
     }
@@ -204,50 +168,35 @@ public class BatchNorm extends AbstractLayer {
         if (mode == NetworkMode.INFER) {
             return null;
         }
-        int d = dLdy.numRows();
         int m = dLdy.numColumns();
-        MatrixF dLdx = Matrices.createF(d, m);
 
-        for (int r = 0; r < d; r++) {
-            float g    = gamma.getUnsafe(r, 0);
-            float iStd = invStd.getUnsafe(r, 0);
-            float mean = batchMean.getUnsafe(r, 0);
+        // --- gamma and beta gradients (summed here, averaged in the update) ---
+        MatrixF dGamma = Matrices.sumColumns(dLdy.hadamard(xHat));
+        MatrixF dBeta = Matrices.sumColumns(dLdy);
 
-            // --- gamma and beta updates (averaged over batch) ---
-            float dGamma = 0.0f, dBeta = 0.0f;
-            for (int c = 0; c < m; c++) {
-                float dl = dLdy.getUnsafe(r, c);
-                dGamma += dl * xHat.getUnsafe(r, c);
-                dBeta  += dl;
-            }
-            gamma.setUnsafe(r, 0, g                        - learningRate * dGamma / m);
-            beta.setUnsafe(r, 0,  beta.getUnsafe(r, 0)     - learningRate * dBeta  / m);
+        // dxHat needs the OLD gamma, so scale before the parameters move
+        MatrixF dxHat = MatrixOps.mulRowsInplace(dLdy.copy(), gamma);
 
-            // --- dL/dvar_r ---
-            float dVar = 0.0f;
-            for (int c = 0; c < m; c++) {
-                float dxhat = dLdy.getUnsafe(r, c) * g;
-                dVar += dxhat * (input.getUnsafe(r, c) - mean);
-            }
-            dVar *= -0.5f * iStd * iStd * iStd; // multiply by -1/2 * invStd^3
+        gamma.addInplace(-learningRate / m, dGamma);
+        beta.addInplace(-learningRate / m, dBeta);
 
-            // --- dL/dmean_r  (the variance-path term vanishes: sum(x-mean)=0) ---
-            float dMean = 0.0f;
-            for (int c = 0; c < m; c++) {
-                dMean += dLdy.getUnsafe(r, c) * g;
-            }
-            dMean *= -iStd;
+        // forward() consumed its centered matrix as xHat, so recompute it here
+        MatrixF centered = input.plusBroadcastedVector(batchMean.uminus());
 
-            // --- dL/dx[r,c] ---
-            for (int c = 0; c < m; c++) {
-                float dxhat      = dLdy.getUnsafe(r, c) * g;
-                float xMinusMean = input.getUnsafe(r, c) - mean;
-                dLdx.setUnsafe(r, c,
-                        dxhat * iStd
-                        + dVar * 2.0f * xMinusMean / m
-                        + dMean / m);
-            }
-        }
+        // --- dL/dvar = -1/2 * invStd^3 * sum_c dxHat * (x - mean) ---
+        MatrixF dVar = Matrices.sumColumns(dxHat.hadamard(centered));
+        MatrixOps.mulRowsInplace(dVar, invStd);
+        MatrixOps.mulRowsInplace(dVar, invStd);
+        MatrixOps.mulRowsInplace(dVar, invStd);
+        dVar.scaleInplace(-0.5f);
+
+        // --- dL/dmean = -invStd * sum_c dxHat  (the variance path vanishes: sum(x-mean)=0) ---
+        MatrixF dMean = MatrixOps.mulRowsInplace(Matrices.sumColumns(dxHat), invStd).scaleInplace(-1.0f);
+
+        // --- dL/dx = dxHat*invStd + dVar*2*(x-mean)/m + dMean/m ---
+        MatrixF dLdx = MatrixOps.mulRowsInplace(dxHat, invStd)
+                .addInplace(1.0f, MatrixOps.mulRowsInplace(centered.scaleInplace(2.0f / m), dVar))
+                .addBroadcastedVectorInplace(dMean.scaleInplace(1.0f / m));
 
         // Release cached state
         xHat      = null;
@@ -266,17 +215,12 @@ public class BatchNorm extends AbstractLayer {
      * Applies the affine transform {@code y = gamma*(x-mean)/sqrt(var+eps) + beta}
      * using the supplied statistics (used for inference with running stats).
      */
-    private MatrixF applyAffine(MatrixF x, MatrixF mean, MatrixF var, int d, int m) {
-        MatrixF out = Matrices.createF(d, m);
-        for (int r = 0; r < d; r++) {
-            float mu   = mean.getUnsafe(r, 0);
-            float iStd = 1.0f / (float) Math.sqrt(var.getUnsafe(r, 0) + eps);
-            float g    = gamma.getUnsafe(r, 0);
-            float b    = beta.getUnsafe(r, 0);
-            for (int c = 0; c < m; c++) {
-                out.setUnsafe(r, c, g * (x.getUnsafe(r, c) - mu) * iStd + b);
-            }
-        }
-        return out;
+    private MatrixF applyAffine(MatrixF x, MatrixF mean, MatrixF var) {
+        float epsilon = eps;
+        MatrixF inverseStd = var.map(v -> (float) (1.0 / Math.sqrt(v + epsilon)));
+        MatrixF out = x.plusBroadcastedVector(mean.uminus());
+        MatrixOps.mulRowsInplace(out, inverseStd);
+        MatrixOps.mulRowsInplace(out, gamma);
+        return out.addBroadcastedVectorInplace(beta);
     }
 }

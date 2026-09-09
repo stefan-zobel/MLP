@@ -180,7 +180,7 @@ public class ParallelBranches extends AbstractLayer {
         for (int b = 0; b < n; b++) {
             int rows = branchOutputRows[b];
             // Extract the gradient slice that belongs to this branch.
-            MatrixF branchGrads = selectConsecutiveRows(grads, rowOffset, rowOffset + rows - 1);
+            MatrixF branchGrads = grads.selectSubmatrix(rowOffset, 0, rowOffset + rows - 1, grads.numColumns() - 1);
             rowOffset += rows;
             // Back-propagate through the branch layers in reverse order.
             MatrixF g = branchGrads;
@@ -228,30 +228,10 @@ public class ParallelBranches extends AbstractLayer {
         MatrixF result = Matrices.createF(totalRows, cols);
         int rowOffset = 0;
         for (MatrixF m : matrices) {
-            int mRows = m.numRows();
-            for (int r = 0; r < mRows; r++) {
-                for (int c = 0; c < cols; c++) {
-                    result.setUnsafe(rowOffset + r, c, m.getUnsafe(r, c));
-                }
-            }
-            rowOffset += mRows;
+            result.setSubmatrixInplace(rowOffset, 0, m, 0, 0, m.numRows() - 1, cols - 1);
+            rowOffset += m.numRows();
         }
         return result;
     }
 
-    /**
-     * Returns a new matrix containing rows {@code fromRow} through
-     * {@code toRow} (both inclusive) of {@code m}.
-     */
-    private static MatrixF selectConsecutiveRows(MatrixF m, int fromRow, int toRow) {
-        int rows = toRow - fromRow + 1;
-        int cols = m.numColumns();
-        MatrixF result = Matrices.createF(rows, cols);
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                result.setUnsafe(r, c, m.getUnsafe(fromRow + r, c));
-            }
-        }
-        return result;
-    }
 }

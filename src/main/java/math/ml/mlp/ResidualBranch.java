@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.ListIterator;
 
-import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 /**
@@ -155,10 +154,7 @@ public class ResidualBranch extends AbstractLayer {
         }
 
         // y = x + F(x)
-        MatrixF result = Matrices.createF(input.numRows(), input.numColumns());
-        result.addInplace(1.0f, input);
-        result.addInplace(1.0f, branchOut);
-        return result;
+        return input.plus(branchOut);
     }
 
     /**
@@ -183,10 +179,7 @@ public class ResidualBranch extends AbstractLayer {
         }
 
         // dL/dx = grads (identity path) + branchGrads (transformation path)
-        MatrixF result = Matrices.createF(grads.numRows(), grads.numColumns());
-        result.addInplace(1.0f, grads);
-        result.addInplace(1.0f, branchGrads);
-        return result;
+        return grads.plus(branchGrads);
     }
 
     // -------------------------------------------------------------------------

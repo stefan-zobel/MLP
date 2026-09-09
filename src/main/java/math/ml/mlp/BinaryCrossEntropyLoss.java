@@ -85,30 +85,22 @@ public class BinaryCrossEntropyLoss extends AbstractLoss {
     // Private helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Gradient {@code (p - t) / (p * (1 - p))}, with the denominator clamped so
+     * that {@code p = 0} and {@code p = 1} cannot divide by zero.
+     */
     private MatrixF computeGradients(MatrixF pred, MatrixF expect) {
-        int rows = pred.numRows();
-        int cols = pred.numColumns();
-        MatrixF gradients = Matrices.createF(rows, cols);
-        for (int c = 0; c < cols; c++) {
-            for (int r = 0; r < rows; r++) {
-                float p = pred.getUnsafe(r, c);
-                float t = expect.getUnsafe(r, c);
-                // Gradient: (p - t) / (p * (1 - p)).
-                // The denominator is clamped to avoid division by zero at the
-                // extremes p = 0 and p = 1.  When Sigmoid precedes this layer
-                // the Sigmoid backward multiplies by p*(1-p), so the terms
-                // cancel and the combined gradient at the sigmoid input is
-                // simply p - t (see class Javadoc).
-                float denom = clamp(p) * clamp(1.0f - p);
-                gradients.setUnsafe(r, c, (p - t) / denom);
-            }
-        }
-        return gradients;
+        MatrixF denominator = pred.map(BinaryCrossEntropyLoss::clamp)
+                .hadamard(pred.map(p -> clamp(1.0f - p)));
+        return MatrixOps.divInplace(pred.minus(expect), denominator);
     }
 
     /**
-     * Computes the per-sample BCE loss (normalised by {@code dim}) and
-     * delivers it to the registered loss callback.
+     * Computes the per-sample BCE loss (normalized by {@code dim}) and delivers
+     * it to the registered loss callback.
+     *
+     * <p>Deliberately a loop: the matrix-API form needs five {@code dim x batch}
+     * temporaries where this needs one, and it only reports a number.
      */
     private void computeLosses(MatrixF pred, MatrixF expect) {
         if (lossCallback != null) {

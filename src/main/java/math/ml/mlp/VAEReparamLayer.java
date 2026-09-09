@@ -15,7 +15,6 @@
  */
 package math.ml.mlp;
 
-import java.util.concurrent.ThreadLocalRandom;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -125,29 +124,17 @@ public class VAEReparamLayer extends AbstractLayer {
     @Override
     public MatrixF forward(MatrixF input) {
         int cols = input.numColumns();
-        mu = selectRows(input, 0, latentDim - 1);
+        mu = input.selectSubmatrix(0, 0, latentDim - 1, cols - 1);
 
         if (mode == NetworkMode.INFER) {
             // Deterministic: use the posterior mean directly.
             return mu;
         }
 
-        logVar = selectRows(input, latentDim, 2 * latentDim - 1);
-        sigma   = Matrices.createF(latentDim, cols);
-        epsilon = Matrices.createF(latentDim, cols);
-        MatrixF z = Matrices.createF(latentDim, cols);
-
-        for (int c = 0; c < cols; c++) {
-            for (int r = 0; r < latentDim; r++) {
-                float lv  = logVar.getUnsafe(r, c);
-                float sig = (float) Math.exp(0.5 * lv);
-                float eps = (float) ThreadLocalRandom.current().nextGaussian();
-                sigma.setUnsafe(r, c, sig);
-                epsilon.setUnsafe(r, c, eps);
-                z.setUnsafe(r, c, mu.getUnsafe(r, c) + eps * sig);
-            }
-        }
-        return z;
+        logVar = input.selectSubmatrix(latentDim, 0, 2 * latentDim - 1, cols - 1);
+        sigma = logVar.map(lv -> (float) Math.exp(0.5 * lv));
+        epsilon = Matrices.randomNormalF(latentDim, cols);
+        return mu.plus(epsilon.hadamard(sigma));
     }
 
     /**
@@ -166,27 +153,14 @@ public class VAEReparamLayer extends AbstractLayer {
             return null;
         }
         int cols = dLdz.numColumns();
-        MatrixF dLdMu     = Matrices.createF(latentDim, cols);
-        MatrixF dLdLogVar = Matrices.createF(latentDim, cols);
+        float kl = klWeight;
 
-        for (int c = 0; c < cols; c++) {
-            for (int r = 0; r < latentDim; r++) {
-                float grad   = dLdz.getUnsafe(r, c);
-                float sig    = sigma.getUnsafe(r, c);
-                float eps    = epsilon.getUnsafe(r, c);
-                float muVal  = mu.getUnsafe(r, c);
-                float sigSq  = sig * sig; // sigma^2
+        // dL/dmu = dL_recon/dz + lambda * mu
+        MatrixF dLdMu = mu.scale(kl, Matrices.sameDimF(mu)).addInplace(1.0f, dLdz);
 
-                // dL/dmu = dL_recon/dz  +  lambda * mu
-                //         (decoder grad)  (KL: dKL/dmu = mu)
-                dLdMu.setUnsafe(r, c, grad + klWeight * muVal);
-
-                // dL/d(log sigma^2) = dL_recon/dz * eps * sigma / 2  +  lambda * (sigma^2 - 1) / 2
-                //                (chain rule dz/dlogVar)    (KL: dKL/dlogVar)
-                dLdLogVar.setUnsafe(r, c,
-                        grad * eps * sig * 0.5f + klWeight * (sigSq - 1.0f) * 0.5f);
-            }
-        }
+        // dL/d(log sigma^2) = dL_recon/dz * eps * sigma / 2 + lambda * (sigma^2 - 1) / 2
+        MatrixF dLdLogVar = dLdz.hadamard(epsilon).hadamard(sigma).scaleInplace(0.5f)
+                .addInplace(1.0f, sigma.hadamard(sigma).mapInplace(sq -> 0.5f * kl * (sq - 1.0f)));
 
         // Release cached state to allow GC.
         mu      = null;
@@ -196,48 +170,8 @@ public class VAEReparamLayer extends AbstractLayer {
 
         // Return [dL/dmu ; dL/d(log sigma^2)] - same row layout as the forward input,
         // so ParallelBranches.backward() can split it without any extra knowledge.
-        return stackRows(dLdMu, dLdLogVar);
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Returns a new matrix containing rows {@code fromRow} through
-     * {@code toRow} (inclusive) of {@code m}.
-     */
-    private static MatrixF selectRows(MatrixF m, int fromRow, int toRow) {
-        int rows = toRow - fromRow + 1;
-        int cols = m.numColumns();
-        MatrixF result = Matrices.createF(rows, cols);
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                result.setUnsafe(r, c, m.getUnsafe(fromRow + r, c));
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Vertically stacks {@code top} and {@code bottom} into a single new
-     * matrix (top rows first).
-     */
-    private static MatrixF stackRows(MatrixF top, MatrixF bottom) {
-        int cols  = top.numColumns();
-        int topR  = top.numRows();
-        int botR  = bottom.numRows();
-        MatrixF result = Matrices.createF(topR + botR, cols);
-        for (int r = 0; r < topR; r++) {
-            for (int c = 0; c < cols; c++) {
-                result.setUnsafe(r, c, top.getUnsafe(r, c));
-            }
-        }
-        for (int r = 0; r < botR; r++) {
-            for (int c = 0; c < cols; c++) {
-                result.setUnsafe(topR + r, c, bottom.getUnsafe(r, c));
-            }
-        }
-        return result;
+        return Matrices.createF(2 * latentDim, cols)
+                .setSubmatrixInplace(0, 0, dLdMu, 0, 0, latentDim - 1, cols - 1)
+                .setSubmatrixInplace(latentDim, 0, dLdLogVar, 0, 0, latentDim - 1, cols - 1);
     }
 }
