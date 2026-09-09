@@ -34,9 +34,6 @@ public class CrossEntropyLoss extends AbstractLoss {
     @Override
     public MatrixF forward(MatrixF prediction) {
         MatrixF expected = getExpectation();
-        if (expected == null) {
-            return null;
-        }
         computeLosses(prediction, expected);
         computeAccuracy(prediction, expected);
         return computeGradients(prediction, expected);

@@ -64,10 +64,6 @@ class NetworkPersistenceTest {
     }
 
     private static final class Net extends AbstractNetwork {
-        @Override
-        public MatrixF getExpectedBatchResults(int batchNumber) {
-            return null;
-        }
     }
 
     private static final class CountingLayer extends AbstractLayer {

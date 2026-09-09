@@ -46,12 +46,6 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         return batchNumber * BATCH_SIZE;
     }
 
-    @Override
-    public MatrixF getExpectedBatchResults(int batchNumber) {
-        int col = getStartColumn(batchNumber);
-        return EXPECT.selectConsecutiveColumns(col, col + BATCH_SIZE - 1);
-    }
-
     private static final int NUM_LABELS = 10;
     private static final int BATCH_SIZE = 200;
     // 784 x 180_000
@@ -78,7 +72,6 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         SoftmaxCrossEntropyLoss loss = new SoftmaxCrossEntropyLoss();
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
         loss.registerLossCallback(net::onLossComputationCompleted);
-        loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
         net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true));
         net.add(new Relu()); // 768
@@ -104,7 +97,8 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
         for (int i = 0; i <= NUM_BATCHES * NUM_BATCHES_PER_EPOCH; ++i) {
             int startCol = getStartColumn(i);
             MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            net.train(input, learningRate);
+            MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+            net.train(input, expected, learningRate);
             if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
                 double trainingAccuracy = Arithmetic.round(epochAccuraciesSum / NUM_BATCHES_PER_EPOCH, 6);
                 double validationAccuracy = net.validationAccuracy();

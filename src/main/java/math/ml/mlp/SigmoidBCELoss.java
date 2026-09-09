@@ -43,9 +43,6 @@ public class SigmoidBCELoss extends AbstractLoss {
             return probabilities;
         }
         MatrixF expected = getExpectation();
-        if (expected == null) {
-            return null;
-        }
         computeLosses(logits, expected);
         gradients = probabilities.minus(expected);
         return gradients;

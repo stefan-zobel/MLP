@@ -29,9 +29,6 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     public AbstractNetwork() {
     }
 
-    // this NEEDS to be implemented for the Network TRAIN mode!
-    public abstract MatrixF getExpectedBatchResults(int batchNumber);
-
     @Override
     public Network add(Layer layer) {
         layers.add(layer);
@@ -39,12 +36,16 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     }
 
     @Override
-    public Network train(MatrixF input, float learningRate) {
-        if (layers.size() < 2 || !(layers.get(layers.size() - 1) instanceof Loss)) {
-            // training requires at least two layers and the last one must be a loss
-            // function
-            return null;
+    public Network train(MatrixF input, MatrixF expected, float learningRate) {
+        if (expected == null) {
+            throw new IllegalArgumentException("expected values must not be null");
         }
+        if (layers.size() < 2 || !(layers.get(layers.size() - 1) instanceof Loss lossLayer)) {
+            throw new IllegalStateException(
+                    "training needs at least two layers and the last one must be a Loss");
+        }
+        // hand the targets to the loss for exactly this batch
+        lossLayer.setExpectedValues(expected);
         for (Layer layer : layers) {
             layer.setMode(NetworkMode.TRAIN);
             input = layer.forward(input);

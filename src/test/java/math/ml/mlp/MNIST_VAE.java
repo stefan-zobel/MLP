@@ -83,7 +83,7 @@ public class MNIST_VAE extends AbstractNetwork {
     private static final MatrixF IMAGES =
             Statistics.rescaleInplace(MNIST.getTrainingSetImages(), LOWER, UPPER);
     // Reconstruction target = input image itself
-    private static final MatrixF TARGETS = IMAGES;
+//    private static final MatrixF TARGETS = IMAGES;
 
     private static final MatrixF TEST_IMAGES =
             Statistics.rescaleInplace(MNIST.getTestSetImages(), LOWER, UPPER);
@@ -103,14 +103,6 @@ public class MNIST_VAE extends AbstractNetwork {
     // -----------------------------------------------------------------------
 
     @Override
-    public MatrixF getExpectedBatchResults(int batchNumber) {
-        // The reconstruction target is the input image itself.
-        int batchIdx = batchNumber % NUM_BATCHES_PER_EPOCH;
-        int startCol = batchIdx * BATCH_SIZE;
-        return TARGETS.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-    }
-
-    @Override
     public void onLossComputationCompleted(MatrixF losses) {
         epochLossSum += Matrices.colsAverage(losses).toScalar();
         ++batchesInEpoch;
@@ -127,7 +119,6 @@ public class MNIST_VAE extends AbstractNetwork {
         // --- Loss ---------------------------------------------------------
         SigmoidBCELoss bce = new SigmoidBCELoss();
         bce.registerLossCallback(net::onLossComputationCompleted);
-        bce.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
         // --- Encoder ------------------------------------------------------
         net.add(new Hidden(INPUT_DIM, 256, "enc1"));
@@ -167,7 +158,8 @@ public class MNIST_VAE extends AbstractNetwork {
             int batchIdx = i % NUM_BATCHES_PER_EPOCH;
             int startCol = batchIdx * BATCH_SIZE;
             MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            net.train(input, lr);
+            // an autoencoder reconstructs its own input: the batch is its own target
+            net.train(input, input, lr);
 
             if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
                 double avgLoss = Arithmetic.round(epochLossSum / batchesInEpoch, 6);

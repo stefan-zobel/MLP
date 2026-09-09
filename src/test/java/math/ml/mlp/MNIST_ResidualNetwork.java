@@ -103,12 +103,6 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
     // -----------------------------------------------------------------------
 
     @Override
-    public MatrixF getExpectedBatchResults(int batchNumber) {
-        int col = (batchNumber % NUM_BATCHES_PER_EPOCH) * BATCH_SIZE;
-        return EXPECT.selectConsecutiveColumns(col, col + BATCH_SIZE - 1);
-    }
-
-    @Override
     public void onLossComputationCompleted(MatrixF losses) {
         epochLossSum += Matrices.colsAverage(losses).toScalar();
     }
@@ -130,7 +124,6 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         SoftmaxCrossEntropyLoss loss = new SoftmaxCrossEntropyLoss();
         loss.registerLossCallback(net::onLossComputationCompleted);
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
-        loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
         // --- Layer 1: linear + BN + ReLU + Dropout --------------------------
         net.add(new Hidden(INPUT_SIZE, 256, "l1", false, true));
@@ -164,7 +157,8 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         for (int i = 0; i <= NUM_EPOCHS * NUM_BATCHES_PER_EPOCH; ++i) {
             int startCol = (i % NUM_BATCHES_PER_EPOCH) * BATCH_SIZE;
             MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            net.train(input, lr);
+            MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+            net.train(input, expected, lr);
 
             if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
                 double trainingAccuracy  = Arithmetic.round(epochAccuracySum / NUM_BATCHES_PER_EPOCH, 6);

@@ -20,11 +20,16 @@ import net.jamu.matrix.MatrixF;
 
 public interface TrainableNetwork extends Network {
 
-    // this NEEDS to be implemented in order for a Network to be trainable
-    Network train(MatrixF input, float learningRate);
-
-    // this NEEDS to be implemented in order for a Network to be trainable
-    MatrixF getExpectedBatchResults(int batchNumber);
+    /**
+     * Trains one batch. Inputs and targets are passed together so that they
+     * cannot come apart.
+     *
+     * @param input        the batch to train on, one sample per column
+     * @param expected     the target values for exactly that batch
+     * @param learningRate the learning rate ({@code 0 < r < 1})
+     * @return this network
+     */
+    Network train(MatrixF input, MatrixF expected, float learningRate);
 
     default Network add(Layer layer) {
         // not every Network needs to be constructed layer by layer

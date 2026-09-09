@@ -44,9 +44,6 @@ public class SoftmaxCrossEntropyLoss extends AbstractLoss {
             return output;
         }
         MatrixF expected = getExpectation();
-        if (expected == null) {
-            return null;
-        }
         computeLosses(output, expected);
         computeAccuracy(output, expected);
         gradients = computeGradients(output, expected);

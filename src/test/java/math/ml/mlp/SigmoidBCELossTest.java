@@ -70,7 +70,7 @@ class SigmoidBCELossTest {
         sigmoid.setMode(NetworkMode.TRAIN);
         BinaryCrossEntropyLoss bce = new BinaryCrossEntropyLoss();
         bce.setMode(NetworkMode.TRAIN);
-        bce.registerBatchExpectedValuesProvider(n -> targets);
+        bce.setExpectedValues(targets);
 
         MatrixF separate = sigmoid.backward(bce.forward(sigmoid.forward(logits.copy())), 0.0f);
         assertEquals(0.0f, separate.getUnsafe(0, 0), 0.0f, "the unfused pair is expected to lose this gradient");
@@ -96,7 +96,7 @@ class SigmoidBCELossTest {
         MatrixF targets = alternatingTargets(5, 2);
         SigmoidBCELoss loss = new SigmoidBCELoss();
         loss.setMode(NetworkMode.TRAIN);
-        loss.registerBatchExpectedValuesProvider(n -> targets);
+        loss.setExpectedValues(targets);
 
         MatrixF fromForward = loss.forward(logits);
         MatrixF fromBackward = loss.backward(null, 0.0f);
@@ -122,7 +122,7 @@ class SigmoidBCELossTest {
         MatrixF[] captured = new MatrixF[1];
         SigmoidBCELoss loss = new SigmoidBCELoss();
         loss.setMode(NetworkMode.TRAIN);
-        loss.registerBatchExpectedValuesProvider(n -> targets);
+        loss.setExpectedValues(targets);
         loss.registerLossCallback(l -> captured[0] = l);
         loss.forward(logits);
 
@@ -150,7 +150,7 @@ class SigmoidBCELossTest {
     private static MatrixF trainForward(MatrixF logits, MatrixF targets) {
         SigmoidBCELoss loss = new SigmoidBCELoss();
         loss.setMode(NetworkMode.TRAIN);
-        loss.registerBatchExpectedValuesProvider(n -> targets);
+        loss.setExpectedValues(targets);
         return loss.forward(logits);
     }
 

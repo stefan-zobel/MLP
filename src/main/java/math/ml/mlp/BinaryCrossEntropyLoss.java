@@ -53,9 +53,9 @@ import net.jamu.matrix.MatrixF;
  * <pre>{@code
  * BinaryCrossEntropyLoss bce = new BinaryCrossEntropyLoss();
  * bce.registerLossCallback(net::onLossComputationCompleted);
- * // Provide the original input images as reconstruction targets:
- * bce.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
  * net.add(bce);
+ * // the training loop passes the original images as reconstruction targets:
+ * net.train(images, images, learningRate);
  * }</pre>
  */
 public class BinaryCrossEntropyLoss extends AbstractLoss {
@@ -74,9 +74,6 @@ public class BinaryCrossEntropyLoss extends AbstractLoss {
     @Override
     public MatrixF forward(MatrixF prediction) {
         MatrixF expected = getExpectation();
-        if (expected == null) {
-            return null;
-        }
         computeLosses(prediction, expected);
         return computeGradients(prediction, expected);
     }

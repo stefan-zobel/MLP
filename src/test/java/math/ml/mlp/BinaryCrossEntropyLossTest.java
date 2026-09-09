@@ -18,7 +18,7 @@ package math.ml.mlp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -54,7 +54,7 @@ class BinaryCrossEntropyLossTest {
         MatrixF[] captured = new MatrixF[1];
         BinaryCrossEntropyLoss loss = new BinaryCrossEntropyLoss();
         loss.setMode(NetworkMode.TRAIN);
-        loss.registerBatchExpectedValuesProvider(n -> targets);
+        loss.setExpectedValues(targets);
         loss.registerLossCallback(l -> captured[0] = l);
         loss.forward(pred);
 
@@ -85,7 +85,7 @@ class BinaryCrossEntropyLossTest {
         MatrixF[] captured = new MatrixF[1];
         BinaryCrossEntropyLoss loss = new BinaryCrossEntropyLoss();
         loss.setMode(NetworkMode.TRAIN);
-        loss.registerBatchExpectedValuesProvider(n -> targets);
+        loss.setExpectedValues(targets);
         loss.registerLossCallback(l -> captured[0] = l);
         MatrixF gradients = loss.forward(pred);
 
@@ -98,10 +98,20 @@ class BinaryCrossEntropyLossTest {
     }
 
     @Test
-    void forwardReturnsNullWithoutExpectedValues() {
+    void forwardRefusesToScoreWithoutExpectedValues() {
         BinaryCrossEntropyLoss loss = new BinaryCrossEntropyLoss();
         loss.setMode(NetworkMode.TRAIN);
-        assertNull(loss.forward(probabilities()));
+        assertThrows(IllegalStateException.class, () -> loss.forward(probabilities()));
+    }
+
+    @Test
+    void expectedValuesAreConsumedOnceSoStaleTargetsCannotBeReused() {
+        MatrixF targets = alternatingTargets();
+        BinaryCrossEntropyLoss loss = new BinaryCrossEntropyLoss();
+        loss.setMode(NetworkMode.TRAIN);
+        loss.setExpectedValues(targets);
+        loss.forward(probabilities());
+        assertThrows(IllegalStateException.class, () -> loss.forward(probabilities()));
     }
 
     @Test
@@ -112,7 +122,7 @@ class BinaryCrossEntropyLossTest {
     private static MatrixF forward(MatrixF pred, MatrixF targets) {
         BinaryCrossEntropyLoss loss = new BinaryCrossEntropyLoss();
         loss.setMode(NetworkMode.TRAIN);
-        loss.registerBatchExpectedValuesProvider(n -> targets);
+        loss.setExpectedValues(targets);
         return loss.forward(pred);
     }
 
