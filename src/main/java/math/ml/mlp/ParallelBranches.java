@@ -191,7 +191,9 @@ public class ParallelBranches extends AbstractLayer {
             }
             // Accumulate (chain rule: same input -> additive gradient terms).
             if (summedInputGrads == null) {
-                summedInputGrads = g;
+                // copy: the accumulator is mutated below, and a branch may still
+                // hold a reference to the matrix it returned
+                summedInputGrads = g.copy();
             } else {
                 summedInputGrads.addInplace(1.0f, g);
             }
