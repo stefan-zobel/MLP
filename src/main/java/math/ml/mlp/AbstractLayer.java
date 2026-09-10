@@ -25,6 +25,10 @@ public abstract class AbstractLayer implements Layer {
     /** The current mode; layers start out in INFER. */
     protected NetworkMode mode = NetworkMode.INFER;
 
+    /** For subclasses; sets no state beyond the INFER default. */
+    protected AbstractLayer() {
+    }
+
     @Override
     public MatrixF forward(MatrixF input) {
         if (mode == NetworkMode.TRAIN) {
