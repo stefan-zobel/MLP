@@ -26,11 +26,11 @@ import net.jamu.matrix.MatrixF;
  *
  * <h2>Loss per sample</h2>
  * <pre>
- *   L = &minus;(1 / dim) &middot; &sum;_i [ t_i &middot; log(p_i) + (1 &minus; t_i) &middot; log(1 &minus; p_i) ]
+ *   L = &minus;&sum;_i [ t_i &middot; log(p_i) + (1 &minus; t_i) &middot; log(1 &minus; p_i) ]
  * </pre>
- * where {@code dim} is the number of output elements (e.g. 784 for MNIST),
- * {@code t} is the reconstruction target (the original input image, values in
- * [0, 1]) and {@code p} is the sigmoid-activated decoder prediction.
+ * summed over the output elements, where {@code t} is the reconstruction target
+ * (the original input image, values in [0, 1]) and {@code p} is the
+ * sigmoid-activated decoder prediction.
  *
  * <h2>Gradient returned by {@link #forward}</h2>
  * <pre>
@@ -93,8 +93,8 @@ public class BinaryCrossEntropyLoss extends AbstractLoss {
     }
 
     /**
-     * Computes the per-sample BCE loss (normalized by {@code dim}) and delivers
-     * it to the registered loss callback.
+     * Computes the per-sample BCE loss and delivers it to the registered loss
+     * callback.
      *
      * <p>Deliberately a loop: the matrix-API form needs five {@code dim x batch}
      * temporaries where this needs one, and it only reports a number.
@@ -111,9 +111,9 @@ public class BinaryCrossEntropyLoss extends AbstractLoss {
                     float t = expect.getUnsafe(r, c);
                     sum -= t * log(p) + (1.0f - t) * log(1.0f - p);
                 }
-                // Normalise by dim so the loss is comparable across different
-                // output sizes (e.g. 784 pixels for MNIST).
-                loss.setUnsafe(0, c, sum / rows);
+                // summed over the output dimension, so it agrees with the
+                // summed gradient this layer returns
+                loss.setUnsafe(0, c, sum);
             }
             lossCallback.accept(loss);
         }

@@ -22,6 +22,7 @@ import static math.ml.mlp.GradientCheck.field;
 import static math.ml.mlp.GradientCheck.input;
 import static math.ml.mlp.GradientCheck.relativeError;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -116,6 +117,19 @@ class BatchNormTest {
         assertTrue(layer.backward(input(3, 4, 8L), 0.1f) == null);
     }
 
+    @Test
+    void aMisSizedInputIsRejectedInTrainingMode() {
+        BatchNorm layer = new BatchNorm(6);
+        layer.setMode(NetworkMode.TRAIN);
+        assertThrows(IllegalArgumentException.class, () -> layer.forward(input(5, 4, 500L)));
+    }
+
+    @Test
+    void aMisSizedInputIsRejectedInInferenceMode() {
+        BatchNorm layer = new BatchNorm(6);
+        layer.setMode(NetworkMode.INFER);
+        assertThrows(IllegalArgumentException.class, () -> layer.forward(input(7, 4, 501L)));
+    }
     @Test
     void parametersSurviveAWriteReadRoundTrip() throws Exception {
         int features = 6;

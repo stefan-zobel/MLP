@@ -154,24 +154,23 @@ public class MNIST_VAE extends AbstractNetwork {
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         // TARGETS == IMAGES, so it is already shuffled in sync.
 
-        for (int i = 0; i <= NUM_EPOCHS * NUM_BATCHES_PER_EPOCH; ++i) {
-            int batchIdx = i % NUM_BATCHES_PER_EPOCH;
-            int startCol = batchIdx * BATCH_SIZE;
-            MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            // an autoencoder reconstructs its own input: the batch is its own target
-            net.train(input, input, lr);
-
-            if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
-                double avgLoss = Arithmetic.round(epochLossSum / batchesInEpoch, 6);
-                System.out.println("epoch " + epoch + "  avg. BCE loss: " + avgLoss);
-                epochLossSum   = 0.0;
-                batchesInEpoch = 0;
-                ++epoch;
-
-                // Reshuffle before next epoch (targets follow automatically).
-                seed = ThreadLocalRandom.current().nextLong();
-                Statistics.shuffleColumnsInplace(IMAGES, seed);
+        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+            for (int b = 0; b < NUM_BATCHES_PER_EPOCH; ++b) {
+                int startCol = b * BATCH_SIZE;
+                MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+                // an autoencoder reconstructs its own input: the batch is its own target
+                net.train(input, input, lr);
             }
+
+            double avgLoss = Arithmetic.round(epochLossSum / batchesInEpoch, 6);
+            System.out.println("epoch " + epoch + "  avg. BCE loss: " + avgLoss);
+            epochLossSum   = 0.0;
+            batchesInEpoch = 0;
+            ++epoch;
+
+            // reshuffle between epochs
+            seed = ThreadLocalRandom.current().nextLong();
+            Statistics.shuffleColumnsInplace(IMAGES, seed);
         }
 
         // -----------------------------------------------------------------------

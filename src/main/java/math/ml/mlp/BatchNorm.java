@@ -214,10 +214,14 @@ public class BatchNorm extends AbstractLayer {
 
     @Override
     public MatrixF forward(MatrixF input) {
+        if (input.numRows() != features) {
+            throw new IllegalArgumentException(
+                    "expected " + features + " features, got " + input.numRows());
+        }
         super.forward(input); // caches this.input when mode == TRAIN
 
-        int d = input.numRows();
-        int m = input.numColumns();
+//        int d = input.numRows();
+//        int m = input.numColumns();
 
         if (mode == NetworkMode.INFER) {
             return applyAffine(input, runningMean, runningVar);

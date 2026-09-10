@@ -154,45 +154,46 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
 
         double maxValidationAccuracy = 0.0;
 
-        for (int i = 0; i <= NUM_EPOCHS * NUM_BATCHES_PER_EPOCH; ++i) {
-            int startCol = (i % NUM_BATCHES_PER_EPOCH) * BATCH_SIZE;
-            MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            net.train(input, expected, lr);
-
-            if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
-                double trainingAccuracy  = Arithmetic.round(epochAccuracySum / NUM_BATCHES_PER_EPOCH, 6);
-                double avgTrainingLoss   = Arithmetic.round(epochLossSum     / NUM_BATCHES_PER_EPOCH, 6);
-                double validationAccuracy = net.validationAccuracy();
-                // keep-best: only the improved model reaches the disk
-                if (validationAccuracy > maxValidationAccuracy) {
-                    maxValidationAccuracy = validationAccuracy;
-                    net.storeParameters();
-                }
-
-                System.out.println("epoch " + epoch
-                        + "   train acc: " + trainingAccuracy
-                        + "   train loss: " + avgTrainingLoss
-                        + "   val acc: " + validationAccuracy
-                        + "   max val acc: " + maxValidationAccuracy);
-
-                epochAccuracySum = 0.0;
-                epochLossSum     = 0.0;
-                ++epoch;
-
-                if (validationAccuracy >= 0.99) {
-                    System.out.println("Reached 99 % validation accuracy. Stopping.");
-                    break;
-                }
-                if (epoch > 5 && validationAccuracy < trainingAccuracy - 0.05) {
-                    System.out.println("Potential overfitting. Stopping.");
-                    break;
-                }
-
-                seed = ThreadLocalRandom.current().nextLong();
-                Statistics.shuffleColumnsInplace(IMAGES, seed);
-                Statistics.shuffleColumnsInplace(EXPECT, seed);
+        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+            for (int b = 0; b < NUM_BATCHES_PER_EPOCH; ++b) {
+                int startCol = b * BATCH_SIZE;
+                MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+                MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+                net.train(input, expected, lr);
             }
+
+            double trainingAccuracy  = Arithmetic.round(epochAccuracySum / NUM_BATCHES_PER_EPOCH, 6);
+            double avgTrainingLoss   = Arithmetic.round(epochLossSum     / NUM_BATCHES_PER_EPOCH, 6);
+            double validationAccuracy = net.validationAccuracy();
+            // keep-best: only the improved model reaches the disk
+            if (validationAccuracy > maxValidationAccuracy) {
+                maxValidationAccuracy = validationAccuracy;
+                net.storeParameters();
+            }
+
+            System.out.println("epoch " + epoch
+                    + "   train acc: " + trainingAccuracy
+                    + "   train loss: " + avgTrainingLoss
+                    + "   val acc: " + validationAccuracy
+                    + "   max val acc: " + maxValidationAccuracy);
+
+            epochAccuracySum = 0.0;
+            epochLossSum     = 0.0;
+            ++epoch;
+
+            if (validationAccuracy >= 0.99) {
+                System.out.println("Reached 99 % validation accuracy. Stopping.");
+                break;
+            }
+            if (epoch > 5 && validationAccuracy < trainingAccuracy - 0.05) {
+                System.out.println("Potential overfitting. Stopping.");
+                break;
+            }
+
+            // reshuffle between epochs
+            seed = ThreadLocalRandom.current().nextLong();
+            Statistics.shuffleColumnsInplace(IMAGES, seed);
+            Statistics.shuffleColumnsInplace(EXPECT, seed);
         }
 
         System.out.println("\nFinal validation accuracy: " + net.validationAccuracy());

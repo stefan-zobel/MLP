@@ -47,7 +47,7 @@ class BinaryCrossEntropyLossTest {
     }
 
     @Test
-    void reportedLossIsNormalisedByTheOutputDimension() {
+    void reportedLossIsSummedOverTheOutputDimension() {
         MatrixF pred = probabilities();
         MatrixF targets = alternatingTargets();
 
@@ -68,8 +68,8 @@ class BinaryCrossEntropyLossTest {
                 double t = targets.getUnsafe(r, c);
                 expected -= t * Math.log(p) + (1.0 - t) * Math.log(1.0 - p);
             }
-            // the loss is divided by the number of rows, the gradient is not
-            assertEquals(expected / ROWS, captured[0].getUnsafe(0, c), 1e-4);
+            // summed, matching the summed gradient
+            assertEquals(expected, captured[0].getUnsafe(0, c), 1e-3);
         }
     }
 

@@ -41,10 +41,6 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         epochAccuraciesSum += accuracy;
     }
 
-    private static int getStartColumn(int batchNumber) {
-        batchNumber = batchNumber % NUM_BATCHES_PER_EPOCH;
-        return batchNumber * BATCH_SIZE;
-    }
 
     private static final int NUM_LABELS = 10;
     private static final int BATCH_SIZE = 200;
@@ -87,8 +83,7 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         net.add(new Dropout(dropoutRate)); // / 2
         net.add(new Relu()); // 256
         net.add(new Hidden(256, NUM_LABELS, "layer4", false, true));
-        net.add(new Dropout(dropoutRate * 1.25f));
-        net.add(new Relu()); // 10
+        // no dropout and no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
         final float learningRate = 0.5f; // XXX
@@ -101,39 +96,39 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         double maxValidationAccuracy = 0.0;
 
         // train for up to NUM_EPOCHS epochs
-        for (int i = 0; i <= NUM_EPOCHS * NUM_BATCHES_PER_EPOCH; ++i) {
-            int startCol = getStartColumn(i);
-            MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-            net.train(input, expected, learningRate);
-            if (i > 0 && (i % NUM_BATCHES_PER_EPOCH == 0)) {
-                double trainingAccuracy = Arithmetic.round(epochAccuraciesSum / NUM_BATCHES_PER_EPOCH, 6);
-                double avgTrainingLoss = Arithmetic.round(epochLossesSum / NUM_BATCHES_PER_EPOCH, 6);
-                double validationAccuracy = net.validationAccuracy();
-                // keep-best: only the improved model reaches the disk
-                if (validationAccuracy > maxValidationAccuracy) {
-                    maxValidationAccuracy = validationAccuracy;
-                    net.storeParameters();
-                }
-                System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
-                        + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "
-                        + maxValidationAccuracy);
-                epochAccuraciesSum = 0.0;
-                epochLossesSum = 0.0;
-                ++epoch;
-                if (epoch > 5 && validationAccuracy < trainingAccuracy - 0.05) {
-                    System.out.println("potential overfitting. Stopping.");
-                    break;
-                }
-                if (validationAccuracy >= 0.99) {
-                    System.out.println("Found a net with accuracy " + validationAccuracy + ". Stopping.");
-                    break;
-                }
-                // reshuffle before the next epoch
-                seed = ThreadLocalRandom.current().nextLong();
-                Statistics.shuffleColumnsInplace(IMAGES, seed);
-                Statistics.shuffleColumnsInplace(EXPECT, seed);
+        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+            for (int b = 0; b < NUM_BATCHES_PER_EPOCH; ++b) {
+                int startCol = b * BATCH_SIZE;
+                MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+                MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
+                net.train(input, expected, learningRate);
             }
+            double trainingAccuracy = Arithmetic.round(epochAccuraciesSum / NUM_BATCHES_PER_EPOCH, 6);
+            double avgTrainingLoss = Arithmetic.round(epochLossesSum / NUM_BATCHES_PER_EPOCH, 6);
+            double validationAccuracy = net.validationAccuracy();
+            // keep-best: only the improved model reaches the disk
+            if (validationAccuracy > maxValidationAccuracy) {
+                maxValidationAccuracy = validationAccuracy;
+                net.storeParameters();
+            }
+            System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
+                    + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "
+                    + maxValidationAccuracy);
+            epochAccuraciesSum = 0.0;
+            epochLossesSum = 0.0;
+            ++epoch;
+            if (epoch > 5 && validationAccuracy < trainingAccuracy - 0.05) {
+                System.out.println("potential overfitting. Stopping.");
+                break;
+            }
+            if (validationAccuracy >= 0.99) {
+                System.out.println("Found a net with accuracy " + validationAccuracy + ". Stopping.");
+                break;
+            }
+            // reshuffle between epochs
+            seed = ThreadLocalRandom.current().nextLong();
+            Statistics.shuffleColumnsInplace(IMAGES, seed);
+            Statistics.shuffleColumnsInplace(EXPECT, seed);
         }
 
         System.out.println("\nDone with training. Checking last validation accuracy.");
