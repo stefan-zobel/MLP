@@ -54,9 +54,42 @@ class HiddenTest {
     }
 
     @Test
-    void theDrawStaysWithinTheGlorotBound() {
+    void theGlorotDrawStaysWithinItsBound() {
+        assertWithinBound(new Hidden(IN, OUT, "a", 17L).weights, (float) Math.sqrt(6.0 / (IN + OUT)));
+    }
+
+    @Test
+    void theHeDrawStaysWithinItsBound() {
+        assertWithinBound(new Hidden(IN, OUT, "a", Init.HE, 17L).weights, (float) Math.sqrt(6.0 / IN));
+    }
+
+    @Test
+    void heDiffersFromGlorotOnlyByTheBound() {
+        // both map the same uniform stream onto [-bound, bound], so with one seed the
+        // draws must be proportional -- this pins down that Init changes nothing else
+        float ratio = (float) Math.sqrt((double) (IN + OUT) / IN);
+        MatrixF glorot = new Hidden(IN, OUT, "a", Init.GLOROT, 23L).weights;
+        MatrixF he = new Hidden(IN, OUT, "b", Init.HE, 23L).weights;
+
+        for (int c = 0; c < glorot.numColumns(); ++c) {
+            for (int r = 0; r < glorot.numRows(); ++r) {
+                assertEquals(glorot.getUnsafe(r, c) * ratio, he.getUnsafe(r, c), 1e-6f,
+                        "not proportional at " + r + "," + c);
+            }
+        }
+        assertTrue(ratio > 1.0f, "He must draw wider than Glorot");
+    }
+
+    @Test
+    void theSeedlessAndSeededConstructorsDefaultToGlorot() {
+        // the default must not move: every call site that predates Init keeps its scheme
         float bound = (float) Math.sqrt(6.0 / (IN + OUT));
-        MatrixF w = new Hidden(IN, OUT, "a", 17L).weights;
+        assertWithinBound(new Hidden(IN, OUT, "a", 29L).weights, bound);
+        assertWithinBound(new Hidden(IN, OUT, "a", false, false, 29L).weights, bound);
+        assertWithinBound(new Hidden(IN, OUT, "a").weights, bound);
+    }
+
+    private static void assertWithinBound(MatrixF w, float bound) {
         for (int c = 0; c < w.numColumns(); ++c) {
             for (int r = 0; r < w.numRows(); ++r) {
                 assertTrue(Math.abs(w.getUnsafe(r, c)) <= bound, "out of bounds at " + r + "," + c);

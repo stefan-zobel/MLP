@@ -57,10 +57,24 @@ public class Hidden extends AbstractLayer {
      * @param in   number of input features
      * @param out  number of output features
      * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
-     * @param seed seed for the Glorot draw
+     * @param seed seed for the weight draw
      */
     public Hidden(int in, int out, String name, long seed) {
-        this(in, out, name, false, false, seed);
+        this(in, out, name, false, false, Init.GLOROT, seed);
+    }
+
+    /**
+     * Creates a layer with an explicit initialization scheme; use {@link Init#HE}
+     * when a ReLU or GELU follows.
+     *
+     * @param in   number of input features
+     * @param out  number of output features
+     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param init the weight initialization scheme
+     * @param seed seed for the weight draw
+     */
+    public Hidden(int in, int out, String name, Init init, long seed) {
+        this(in, out, name, false, false, init, seed);
     }
 
     public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases) {
@@ -76,10 +90,26 @@ public class Hidden extends AbstractLayer {
      * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
      * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
      * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
-     * @param seed                   seed for the Glorot draw, unused when the parameters are loaded
+     * @param seed                   seed for the weight draw, unused when the parameters are loaded
      */
     public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
             long seed) {
+        this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, Init.GLOROT, seed);
+    }
+
+    /**
+     * The overloads without an {@code init} use {@link Init#GLOROT}.
+     *
+     * @param in                     number of input features
+     * @param out                    number of output features
+     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
+     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param init                   the weight initialization scheme
+     * @param seed                   seed for the weight draw, unused when the parameters are loaded
+     */
+    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
+            Init init, long seed) {
         this.name = name;
         this.storeWeightsAndBiases = storeWeightsAndBiases;
         int i = in;
@@ -88,8 +118,7 @@ public class Hidden extends AbstractLayer {
             weights = loadWeights();
             biases = loadBiases();
         } else {
-            // Glorot uniform initialization
-            float bound = (float) Math.sqrt(6.0 / (i + j));
+            float bound = init.bound(i, j);
             weights = Matrices.randomUniformF(j, i, -bound, bound, seed);
             biases = Matrices.createF(j, 1);
         }

@@ -79,13 +79,14 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
         loss.registerLossCallback(net::onLossComputationCompleted);
 
-        net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true, seeds.nextLong()));
+        // He ahead of every ReLU, Glorot on the output layer, which feeds the loss directly
+        net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true, Init.HE, seeds.nextLong()));
         net.add(new Dropout(dropoutRate / 3, seeds.nextLong())); // / 5 / 3
         net.add(new Relu()); // 768
-        net.add(new Hidden(768, 384, "layer2", false, true, seeds.nextLong()));
+        net.add(new Hidden(768, 384, "layer2", false, true, Init.HE, seeds.nextLong()));
         net.add(new Dropout(dropoutRate, seeds.nextLong())); // / 4 / 2
         net.add(new Relu()); // 384
-        net.add(new Hidden(384, 256, "layer3", false, true, seeds.nextLong()));
+        net.add(new Hidden(384, 256, "layer3", false, true, Init.HE, seeds.nextLong()));
         net.add(new Dropout(dropoutRate, seeds.nextLong())); // / 2
         net.add(new Relu()); // 256
         net.add(new Hidden(256, NUM_LABELS, "layer4", false, true, seeds.nextLong()));
