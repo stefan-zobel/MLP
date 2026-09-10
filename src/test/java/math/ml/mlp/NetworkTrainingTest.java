@@ -107,8 +107,7 @@ class NetworkTrainingTest {
 
         MatrixF targets = Matrices.randomUniformF(3, 6, 0.0f, 1.0f, 511L);
         for (int batch = 0; batch < 5; ++batch) {
-            // Dropout masks its argument in place, so every batch gets a fresh copy
-            net.train(input(8, 6, 512L).copy(), targets, 0.05f);
+            net.train(input(8, 6, 512L), targets, 0.05f);
         }
         return losses;
     }

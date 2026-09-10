@@ -45,6 +45,28 @@ public interface Layer {
     void setMode(NetworkMode mode);
 
     /**
+     * Whether {@link #forward(MatrixF)} may overwrite the matrix it is handed.
+     * Composite layers copy a shared input before passing it on if any of their
+     * sub-layers says yes.
+     *
+     * @return {@code true} if the forward pass writes into its argument
+     */
+    default boolean mutatesInput() {
+        return false;
+    }
+
+    /**
+     * Whether {@link #backward(MatrixF, float)} may overwrite the matrix it is
+     * handed. Neither predicate says anything about the matrix a layer
+     * <em>returns</em>, which may still be one of its own buffers.
+     *
+     * @return {@code true} if the backward pass writes into its argument
+     */
+    default boolean mutatesGradients() {
+        return false;
+    }
+
+    /**
      * Persists the trainable parameters of this layer (e.g. weights and biases).
      * The default implementation is a no-op; layers with storable parameters
      * should override this method. Composite layers (e.g.

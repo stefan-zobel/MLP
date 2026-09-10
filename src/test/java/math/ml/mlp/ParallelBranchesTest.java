@@ -20,6 +20,7 @@ import static math.ml.mlp.GradientCheck.input;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -37,6 +38,30 @@ class ParallelBranchesTest {
                 List.of(new Hidden(6, 4, "p1"), new Sigmoid()),
                 List.of(new Hidden(6, 4, "p2")));
         assertInputGradient(layer, input(6, 5, 11L), input(8, 5, 12L), 3e-2);
+    }
+
+    @Test
+    void backwardMatchesNumericalInputGradientWithoutAnActivation() {
+        // branch 0 above contains a layer that may mutate, neither branch here does,
+        // so the two exercise the copied and the uncopied path through the same code
+        ParallelBranches layer = new ParallelBranches(
+                List.of(new Hidden(6, 4, "p3")),
+                List.of(new Hidden(6, 4, "p4")));
+        assertInputGradient(layer, input(6, 5, 31L), input(8, 5, 32L), 3e-2);
+    }
+
+    @Test
+    void aMutatingBranchLayerCannotReachTheOtherBranch() {
+        ParallelBranches layer = new ParallelBranches(
+                List.of(new MutatingProbe(4, 3, 1.0f)),
+                List.of(new Hidden(4, 4, "p5")));
+        layer.setMode(NetworkMode.TRAIN);
+        MatrixF out = layer.forward(input(4, 3, 33L));
+        for (int c = 0; c < out.numColumns(); ++c) {
+            for (int r = 0; r < out.numRows(); ++r) {
+                assertTrue(Float.isFinite(out.getUnsafe(r, c)), "NaN leaked into row " + r);
+            }
+        }
     }
 
     @Test
