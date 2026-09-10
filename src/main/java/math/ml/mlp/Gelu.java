@@ -17,8 +17,10 @@ package math.ml.mlp;
 
 import math.dl.GELU;
 
+/** Gaussian error linear unit, a smooth alternative to {@link Relu}. */
 public class Gelu extends Activation {
 
+    /** Creates a GELU layer. */
     public Gelu() {
         super(GELU::geluF, GELU::dgeluF_dx);
     }

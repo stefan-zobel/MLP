@@ -60,6 +60,7 @@ import net.jamu.matrix.MatrixF;
  */
 public class BinaryCrossEntropyLoss extends AbstractLoss {
 
+    /** Creates a binary cross-entropy loss; expects sigmoid outputs, not logits. */
     public BinaryCrossEntropyLoss() {
     }
 

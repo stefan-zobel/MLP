@@ -17,6 +17,7 @@ package math.ml.mlp;
 
 import net.jamu.matrix.MatrixF;
 
+/** One stage of a network: a forward pass, a backward pass and a mode. */
 public interface Layer {
 
     /**
@@ -36,6 +37,11 @@ public interface Layer {
      */
     MatrixF backward(MatrixF grads, float learningRate);
 
+    /**
+     * Switches between training and inference.
+     *
+     * @param mode the mode to run in
+     */
     void setMode(NetworkMode mode);
 
     /**

@@ -15,9 +15,12 @@
  */
 package math.ml.mlp;
 
+/** Whether a layer is being trained or only queried. */
 public enum NetworkMode {
     //@formatter:off
+    /** Caches what the backward pass needs; dropout and sampling are active. */
     TRAIN,
+    /** Forward pass only, deterministic where a layer has a choice. */
     INFER
     //@formatter:on
 }

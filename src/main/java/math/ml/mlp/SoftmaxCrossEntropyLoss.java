@@ -25,6 +25,7 @@ public class SoftmaxCrossEntropyLoss extends AbstractLoss {
 
     private MatrixF gradients;
 
+    /** Creates a fused softmax and cross-entropy loss; expects raw logits. */
     public SoftmaxCrossEntropyLoss() {
     }
 

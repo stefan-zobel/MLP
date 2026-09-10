@@ -20,10 +20,21 @@ import java.util.function.DoubleConsumer;
 
 import net.jamu.matrix.MatrixF;
 
+/** The final layer of a network: scores a prediction against the targets. */
 public interface Loss extends Layer {
 
+    /**
+     * Registers a callback that receives the per-sample losses of each batch.
+     *
+     * @param callback the callback, or {@code null} to remove it
+     */
     void registerLossCallback(Consumer<MatrixF> callback);
 
+    /**
+     * Registers a callback that receives the accuracy of each batch.
+     *
+     * @param callback the callback, or {@code null} to remove it
+     */
     void registerAccuracyCallback(DoubleConsumer callback);
 
     /**

@@ -18,6 +18,7 @@ package math.ml.mlp;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
+/** A {@link Network} that can also be trained. */
 public interface TrainableNetwork extends Network {
 
     /**
@@ -31,15 +32,32 @@ public interface TrainableNetwork extends Network {
      */
     Network train(MatrixF input, MatrixF expected, float learningRate);
 
+    /**
+     * Appends a layer. The default is a no-op, because not every network is built
+     * layer by layer.
+     *
+     * @param layer the layer to append
+     * @return this network
+     */
     default Network add(Layer layer) {
         // not every Network needs to be constructed layer by layer
         return this;
     }
 
+    /**
+     * Called once per batch with the per-sample losses; the default prints them.
+     *
+     * @param losses the losses of the batch just trained
+     */
     default void onLossComputationCompleted(MatrixF losses) {
         System.out.println("Avg. loss: " + Matrices.colsAverage(losses).toScalar());
     }
 
+    /**
+     * Called once per batch with the accuracy; the default prints it.
+     *
+     * @param accuracy the accuracy of the batch just trained
+     */
     default void onAccuracyComputationCompleted(double accuracy) {
         System.out.println("Accuracy: " + accuracy);
     }

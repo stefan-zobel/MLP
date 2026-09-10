@@ -39,6 +39,11 @@ public class Dropout extends AbstractLayer {
     /** Owned by this layer, so two Dropout layers never interfere. */
     private final SplittableRandom rng;
 
+    /**
+     * Creates a Dropout layer with an unseeded mask sequence.
+     *
+     * @param dropoutRate fraction of the activations to zero out
+     */
     public Dropout(float dropoutRate) {
         this(dropoutRate, ThreadLocalRandom.current().nextLong());
     }

@@ -45,6 +45,7 @@ public class Sigmoid extends Activation {
         return s * (1.0f - s);
     }
 
+    /** Creates a sigmoid layer. */
     public Sigmoid() {
         super(Sigmoid::sigmoid, Sigmoid::dsigmoid_dx);
     }

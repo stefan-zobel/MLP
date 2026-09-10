@@ -20,12 +20,17 @@ import java.util.function.DoubleConsumer;
 
 import net.jamu.matrix.MatrixF;
 
+/** Base class holding the callbacks and the targets of the current batch. */
 public class AbstractLoss extends AbstractLayer implements Loss {
 
+    /** Receives the per-sample losses of each batch, or {@code null}. */
     protected Consumer<MatrixF> lossCallback;
+    /** Receives the accuracy of each batch, or {@code null}. */
     protected DoubleConsumer accuracyCallback;
+    /** The targets pushed for the next forward pass; consumed once. */
     protected MatrixF expectedValues;
 
+    /** Creates a loss with no callbacks registered. */
     public AbstractLoss() {
     }
 

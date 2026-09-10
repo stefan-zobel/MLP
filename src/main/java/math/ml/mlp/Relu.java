@@ -17,8 +17,10 @@ package math.ml.mlp;
 
 import math.dl.RELU;
 
+/** Rectified linear unit, {@code max(0, x)}. */
 public class Relu extends Activation {
 
+    /** Creates a ReLU layer. */
     public Relu() {
         super(RELU::reluF, RELU::dreluF_dx);
     }

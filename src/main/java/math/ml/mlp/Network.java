@@ -17,8 +17,15 @@ package math.ml.mlp;
 
 import net.jamu.matrix.MatrixF;
 
+/** A network that can predict. */
 public interface Network {
 
+    /**
+     * Runs a forward pass in {@link NetworkMode#INFER} mode.
+     *
+     * @param input one sample per column
+     * @return the prediction of the last layer
+     */
     MatrixF infer(MatrixF input);
 
 }

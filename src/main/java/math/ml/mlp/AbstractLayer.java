@@ -17,9 +17,12 @@ package math.ml.mlp;
 
 import net.jamu.matrix.MatrixF;
 
+/** Base class that caches the forward input in TRAIN mode and holds the mode. */
 public abstract class AbstractLayer implements Layer {
 
+    /** The last forward input, cached in TRAIN mode for the backward pass. */
     protected MatrixF input;
+    /** The current mode; layers start out in INFER. */
     protected NetworkMode mode = NetworkMode.INFER;
 
     @Override

@@ -26,6 +26,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
+/** A fully connected layer, {@code y = W x + b}. */
 public class Hidden extends AbstractLayer {
 
     /**
@@ -40,13 +41,22 @@ public class Hidden extends AbstractLayer {
      */
     private static final String STORE_DIR = "./checkpoints/";
 
-    // j x i
+    /** The weight matrix, out x in. */
     protected final MatrixF weights;
-    // j x 1
+    /** The bias column, out x 1. */
     protected final MatrixF biases;
+    /** Identifies the parameter files of this layer. */
     protected final String name;
+    /** Whether {@link #storeParameters()} writes anything. */
     protected final boolean storeWeightsAndBiases;
 
+    /**
+     * Creates a layer with Glorot initialization from an unseeded draw.
+     *
+     * @param in   number of input features
+     * @param out  number of output features
+     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     */
     public Hidden(int in, int out, String name) {
         this(in, out, name, false, false, ThreadLocalRandom.current().nextLong());
     }
@@ -77,6 +87,15 @@ public class Hidden extends AbstractLayer {
         this(in, out, name, false, false, init, seed);
     }
 
+    /**
+     * Creates a layer with Glorot initialization from an unseeded draw.
+     *
+     * @param in                     number of input features
+     * @param out                    number of output features
+     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
+     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
+     */
     public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases) {
         this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, ThreadLocalRandom.current().nextLong());
     }
@@ -156,12 +175,14 @@ public class Hidden extends AbstractLayer {
         return load(LOAD_DIR + "b_" + name);
     }
 
+    /** Writes the weights if storing was enabled at construction time. */
     public void storeWeights() {
         if (storeWeightsAndBiases) {
             store(STORE_DIR + "w_" + name, weights);
         }
     }
 
+    /** Writes the biases if storing was enabled at construction time. */
     public void storeBiases() {
         if (storeWeightsAndBiases) {
             store(STORE_DIR + "b_" + name, biases);

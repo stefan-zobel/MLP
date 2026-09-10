@@ -18,11 +18,20 @@ package math.ml.mlp;
 import net.jamu.matrix.FFunction;
 import net.jamu.matrix.MatrixF;
 
+/** An element-wise activation, given as a function and its derivative. */
 public class Activation extends AbstractLayer {
 
+    /** The activation itself. */
     protected final FFunction fun;
+    /** Its derivative, applied to the cached pre-activation value. */
     protected final FFunction deriv;
 
+    /**
+     * Creates an activation layer.
+     *
+     * @param fun   the activation function
+     * @param deriv its derivative with respect to the pre-activation value
+     */
     public Activation(FFunction fun, FFunction deriv) {
         this.fun = fun;
         this.deriv = deriv;

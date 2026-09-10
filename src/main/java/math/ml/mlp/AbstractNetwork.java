@@ -20,12 +20,16 @@ import java.util.ListIterator;
 
 import net.jamu.matrix.MatrixF;
 
+/** A network built as a flat list of layers, the last one a {@link Loss}. */
 public abstract class AbstractNetwork implements TrainableNetwork {
 
+    /** The layers in forward order. */
     protected ArrayList<Layer> layers = new ArrayList<>();
 
+    /** Number of batches trained so far. */
     protected int batchCount = 0;
 
+    /** Creates an empty network; add the layers with {@link #add(Layer)}. */
     public AbstractNetwork() {
     }
 
