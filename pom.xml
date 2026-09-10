@@ -25,6 +25,13 @@
             <groupId>net.sourceforge.streamsupport</groupId>
             <artifactId>math-base</artifactId>
             <version>1.5.2</version>
+            <!-- keeps JMH's BenchmarkProcessor off the annotation processor path -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
