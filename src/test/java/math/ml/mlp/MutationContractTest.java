@@ -107,6 +107,32 @@ class MutationContractTest {
         }
     }
 
+    // The predicates describe arguments. What a layer returns is a separate property, and
+    // BatchNorm and LayerNorm must return something freshly allocated: Activation caches
+    // the previous layer's output until its own backward, infer() hands the last output to
+    // the caller, and ParallelBranches holds every branch output until it stacks them.
+    @Test
+    void theNormLayersReturnAFreshMatrixEveryTime() {
+        assertFreshReturn(new BatchNorm(4), NetworkMode.TRAIN);
+        assertFreshReturn(new BatchNorm(4), NetworkMode.INFER);
+        assertFreshReturn(new LayerNorm(4), NetworkMode.TRAIN);
+        assertFreshReturn(new LayerNorm(4), NetworkMode.INFER);
+    }
+
+    private static void assertFreshReturn(Layer layer, NetworkMode mode) {
+        layer.setMode(mode);
+        MatrixF x = input(4, 3, 61L);
+        MatrixF first = layer.forward(x);
+        assertNotSame(x, first, "forward returned its own argument");
+        MatrixF second = layer.forward(x);
+        assertNotSame(first, second, "forward reused the matrix it returned last time");
+        if (mode == NetworkMode.TRAIN) {
+            MatrixF grads = input(4, 3, 62L);
+            MatrixF back = layer.backward(grads, 0.0f);
+            assertNotSame(grads, back, "backward returned its own argument");
+            assertNotSame(second, back, "backward returned the matrix forward had returned");
+        }
+    }
     // remembers the matrix it was handed, so a copy can be told from the original
     private static final class RecordingLayer extends AbstractLayer {
 

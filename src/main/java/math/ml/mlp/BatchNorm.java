@@ -82,10 +82,16 @@ public class BatchNorm extends AbstractLayer {
     private final MatrixF runningMean; // initialized to 0
     private final MatrixF runningVar;  // initialized to 1
 
-    // Cached during TRAIN forward for use in backward
-    private MatrixF xHat;      // normalized input    (features x batchSize)
-    private MatrixF batchMean; // per-feature mean    (features x 1)
-    private MatrixF invStd;    // 1/sqrt(var+eps) per row  (features x 1)
+    // Written by every TRAIN forward and read by the backward that follows it. All three
+    // are features x 1, a shape known at construction, so they are allocated once.
+    private final MatrixF batchMean; // per-feature mean
+    private final MatrixF batchVar;  // per-feature variance, kept for the running average
+    private final MatrixF invStd;    // 1/sqrt(var+eps) per feature
+
+    // Written by every backward and handed straight to the parameter update, which needs
+    // them as matrices; also features x 1
+    private final MatrixF dGamma;
+    private final MatrixF dBeta;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -151,6 +157,12 @@ public class BatchNorm extends AbstractLayer {
         beta        = Matrices.createF(features, 1);
         runningMean = Matrices.createF(features, 1);
         runningVar  = Matrices.onesF(features, 1);
+
+        batchMean   = Matrices.createF(features, 1);
+        batchVar    = Matrices.createF(features, 1);
+        invStd      = Matrices.createF(features, 1);
+        dGamma      = Matrices.createF(features, 1);
+        dBeta       = Matrices.createF(features, 1);
 
         if (load) {
             try (FileInputStream fis = new FileInputStream(LOAD_DIR + "bn_" + name)) {
@@ -220,34 +232,89 @@ public class BatchNorm extends AbstractLayer {
         }
         super.forward(input); // caches this.input when mode == TRAIN
 
-//        int d = input.numRows();
-//        int m = input.numColumns();
-
         if (mode == NetworkMode.INFER) {
             return applyAffine(input, runningMean, runningVar);
         }
 
         // --- TRAIN ---
 
-        // 1. Batch mean per feature; colsAverage collapses the columns, so the
-        //    result is the d x 1 per-row mean
-        batchMean = Matrices.colsAverage(input);
+        // 1. and 2. Batch mean, variance and inverse standard deviation per feature
+        batchStatistics(input.getArrayUnsafe(), input.numColumns());
 
-        // 2. Batch variance and inverse standard deviation per feature
-        MatrixF centered = input.plusBroadcastedVector(batchMean.uminus());
-        MatrixF batchVar = Matrices.colsAverage(centered.hadamard(centered));
-        float epsilon = eps;
-        invStd = batchVar.map(v -> (float) (1.0 / Math.sqrt(v + epsilon)));
-
-        // 3. Normalize and apply gamma/beta; cache xHat for backward
-        xHat = MatrixOps.mulRowsInplace(centered, invStd);
-        MatrixF output = MatrixOps.mulRowsInplace(xHat.copy(), gamma).addBroadcastedVectorInplace(beta);
+        // 3. Normalize and apply gamma and beta. Nothing of batch size is cached for
+        //    backward: it recomputes the normalized value from the input it already has.
+        MatrixF output = Matrices.sameDimF(input);
+        normalize(input.getArrayUnsafe(), output.getArrayUnsafe(), 0, output.getArrayUnsafe().length);
 
         // 4. Update running statistics (exponential moving average)
         runningMean.scaleInplace(1.0f - momentum).addInplace(momentum, batchMean);
         runningVar.scaleInplace(1.0f - momentum).addInplace(momentum, batchVar);
 
         return output;
+    }
+
+    /**
+     * Fills {@link #batchMean}, {@link #batchVar} and {@link #invStd} from the
+     * {@code features x m} matrix behind {@code x}.
+     *
+     * <p>Two passes, both accumulating in {@code double} and scaling by the {@code float}
+     * reciprocal of {@code m} at the end, because that is what {@code Matrices.colsAverage}
+     * does and the numbers must not move. Walking columns outermost gives the same
+     * accumulator the same terms in the same order, but sequentially in memory rather
+     * than with a stride of {@code features}.
+     */
+    private void batchStatistics(float[] x, int m) {
+        float[] mean = batchMean.getArrayUnsafe();
+        float[] var = batchVar.getArrayUnsafe();
+        float[] inv = invStd.getArrayUnsafe();
+        double[] sum = new double[features];
+
+        for (int i = 0; i < x.length; i += features) {
+            for (int r = 0; r < features; ++r) {
+                sum[r] += x[i + r];
+            }
+        }
+        float reciprocal = 1.0f / m;
+        for (int r = 0; r < features; ++r) {
+            mean[r] = (float) sum[r] * reciprocal;
+            sum[r] = 0.0;
+        }
+
+        for (int i = 0; i < x.length; i += features) {
+            for (int r = 0; r < features; ++r) {
+                // the square rounds to float before it is accumulated, as hadamard does
+                float centered = x[i + r] - mean[r];
+                sum[r] += centered * centered;
+            }
+        }
+        for (int r = 0; r < features; ++r) {
+            var[r] = (float) sum[r] * reciprocal;
+            inv[r] = (float) (1.0 / Math.sqrt(var[r] + eps));
+        }
+    }
+
+    /**
+     * Writes the normalized, scaled and shifted output for the elements
+     * {@code [from, to)} of the column-major backing arrays.
+     *
+     * <p>Both bounds are column boundaries, that is multiples of {@code features}, which
+     * is what makes a range of columns a contiguous range of elements here.
+     *
+     * @param x    the input values
+     * @param out  where to write {@code gamma * (x - mean) * invStd + beta}
+     * @param from first element to write, a multiple of {@code features}
+     * @param to   one past the last element to write, a multiple of {@code features}
+     */
+    private void normalize(float[] x, float[] out, int from, int to) {
+        float[] mean = batchMean.getArrayUnsafe();
+        float[] inv = invStd.getArrayUnsafe();
+        float[] g = gamma.getArrayUnsafe();
+        float[] b = beta.getArrayUnsafe();
+        for (int i = from; i < to; i += features) {
+            for (int r = 0; r < features; ++r) {
+                out[i + r] = (x[i + r] - mean[r]) * inv[r] * g[r] + b[r];
+            }
+        }
     }
 
     /**
@@ -272,41 +339,101 @@ public class BatchNorm extends AbstractLayer {
         }
         int m = dLdy.numColumns();
 
-        // --- gamma and beta gradients (summed here, averaged in the update) ---
-        MatrixF dGamma = Matrices.sumColumns(dLdy.hadamard(xHat));
-        MatrixF dBeta = Matrices.sumColumns(dLdy);
+        // one pass for all four reductions; dxHat and (x - mean) are one multiply and one
+        // subtract each, which is cheaper than the two batch-sized matrices they were
+        float[] dVar = new float[features];
+        float[] dMean = new float[features];
+        reduce(dLdy.getArrayUnsafe(), dVar, dMean);
 
-        // dxHat needs the OLD gamma, so scale before the parameters move
-        MatrixF dxHat = MatrixOps.mulRowsInplace(dLdy.copy(), gamma);
+        // --- dL/dx = dxHat*invStd + dVar*2*(x-mean)/m + dMean/m ---
+        MatrixF dLdx = Matrices.sameDimF(dLdy);
+        inputGradient(dLdy.getArrayUnsafe(), dVar, dMean, m, dLdx.getArrayUnsafe(), 0,
+                dLdx.getArrayUnsafe().length);
 
+        // last of all, because everything above reads the gamma the forward pass used
         gamma.addInplace(-learningRate / m, dGamma);
         beta.addInplace(-learningRate / m, dBeta);
 
-        // forward() consumed its centered matrix as xHat, so recompute it here
-        MatrixF centered = input.plusBroadcastedVector(batchMean.uminus());
-
-        // --- dL/dvar = -1/2 * invStd^3 * sum_c dxHat * (x - mean) ---
-        MatrixF dVar = Matrices.sumColumns(dxHat.hadamard(centered));
-        MatrixOps.mulRowsInplace(dVar, invStd);
-        MatrixOps.mulRowsInplace(dVar, invStd);
-        MatrixOps.mulRowsInplace(dVar, invStd);
-        dVar.scaleInplace(-0.5f);
-
-        // --- dL/dmean = -invStd * sum_c dxHat  (the variance path vanishes: sum(x-mean)=0) ---
-        MatrixF dMean = MatrixOps.mulRowsInplace(Matrices.sumColumns(dxHat), invStd).scaleInplace(-1.0f);
-
-        // --- dL/dx = dxHat*invStd + dVar*2*(x-mean)/m + dMean/m ---
-        MatrixF dLdx = MatrixOps.mulRowsInplace(dxHat, invStd)
-                .addInplace(1.0f, MatrixOps.mulRowsInplace(centered.scaleInplace(2.0f / m), dVar))
-                .addBroadcastedVectorInplace(dMean.scaleInplace(1.0f / m));
-
-        // Release cached state
-        xHat      = null;
-        batchMean = null;
-        invStd    = null;
-        input     = null; // inherited from AbstractLayer
+        // The only cached matrix left is the caller's input; batchMean, batchVar and
+        // invStd are features x 1 and are simply overwritten by the next forward.
+        input = null; // inherited from AbstractLayer
 
         return dLdx;
+    }
+
+    /**
+     * Runs the four per-feature reductions of the backward pass in one walk over the
+     * batch: the gradients of {@code gamma} and {@code beta} into their fields, and the
+     * gradients of the variance and the mean into {@code dVar} and {@code dMean}.
+     *
+     * <p>Each accumulator sees the same terms in the same order as the
+     * {@code Matrices.sumColumns} call it replaces, in {@code double} and narrowed once.
+     *
+     * @param dy    the incoming gradient
+     * @param dVar  receives {@code dL/dvar}, one entry per feature
+     * @param dMean receives {@code dL/dmean} already divided by the batch size
+     */
+    private void reduce(float[] dy, float[] dVar, float[] dMean) {
+        float[] x = input.getArrayUnsafe();
+        float[] mean = batchMean.getArrayUnsafe();
+        float[] inv = invStd.getArrayUnsafe();
+        float[] g = gamma.getArrayUnsafe();
+        double[] sumGamma = new double[features];
+        double[] sumBeta = new double[features];
+        double[] sumVar = new double[features];
+        double[] sumMean = new double[features];
+
+        for (int i = 0; i < dy.length; i += features) {
+            for (int r = 0; r < features; ++r) {
+                float dl = dy[i + r];
+                float dxHat = dl * g[r];
+                // the same expression the forward pass used, rather than a cached copy
+                float centered = x[i + r] - mean[r];
+                sumGamma[r] += dl * (centered * inv[r]);
+                sumBeta[r] += dl;
+                sumVar[r] += dxHat * centered;
+                sumMean[r] += dxHat;
+            }
+        }
+
+        float[] dg = dGamma.getArrayUnsafe();
+        float[] db = dBeta.getArrayUnsafe();
+        float reciprocal = 1.0f / (dy.length / features);
+        for (int r = 0; r < features; ++r) {
+            dg[r] = (float) sumGamma[r];
+            db[r] = (float) sumBeta[r];
+            // the three invStd factors and the halving were three separate roundings
+            // before and have to stay that way
+            dVar[r] = (float) sumVar[r] * inv[r] * inv[r] * inv[r] * -0.5f;
+            dMean[r] = (float) sumMean[r] * inv[r] * -1.0f * reciprocal;
+        }
+    }
+
+    /**
+     * Writes the input gradient for the elements {@code [from, to)} of the column-major
+     * backing arrays. Both bounds are multiples of {@code features}.
+     *
+     * @param dy    the incoming gradient
+     * @param dVar  {@code dL/dvar} per feature
+     * @param dMean {@code dL/dmean} per feature, already divided by {@code m}
+     * @param m     the batch size
+     * @param out   where to write the result
+     * @param from  first element to write
+     * @param to    one past the last element to write
+     */
+    private void inputGradient(float[] dy, float[] dVar, float[] dMean, int m, float[] out, int from,
+            int to) {
+        float[] x = input.getArrayUnsafe();
+        float[] mean = batchMean.getArrayUnsafe();
+        float[] inv = invStd.getArrayUnsafe();
+        float[] g = gamma.getArrayUnsafe();
+        float twoOverM = 2.0f / m;
+        for (int i = from; i < to; i += features) {
+            for (int r = 0; r < features; ++r) {
+                float dxHat = dy[i + r] * g[r];
+                out[i + r] = dxHat * inv[r] + (x[i + r] - mean[r]) * twoOverM * dVar[r] + dMean[r];
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -318,11 +445,25 @@ public class BatchNorm extends AbstractLayer {
      * using the supplied statistics (used for inference with running stats).
      */
     private MatrixF applyAffine(MatrixF x, MatrixF mean, MatrixF var) {
-        float epsilon = eps;
-        MatrixF inverseStd = var.map(v -> (float) (1.0 / Math.sqrt(v + epsilon)));
-        MatrixF out = x.plusBroadcastedVector(mean.uminus());
-        MatrixOps.mulRowsInplace(out, inverseStd);
-        MatrixOps.mulRowsInplace(out, gamma);
-        return out.addBroadcastedVectorInplace(beta);
+        // a local rather than the invStd field: inference must not disturb the state a
+        // TRAIN forward left behind for its backward
+        float[] inv = new float[features];
+        float[] v = var.getArrayUnsafe();
+        for (int r = 0; r < features; ++r) {
+            inv[r] = (float) (1.0 / Math.sqrt(v[r] + eps));
+        }
+
+        MatrixF output = Matrices.sameDimF(x);
+        float[] in = x.getArrayUnsafe();
+        float[] out = output.getArrayUnsafe();
+        float[] mu = mean.getArrayUnsafe();
+        float[] g = gamma.getArrayUnsafe();
+        float[] b = beta.getArrayUnsafe();
+        for (int i = 0; i < in.length; i += features) {
+            for (int r = 0; r < features; ++r) {
+                out[i + r] = (in[i + r] - mu[r]) * inv[r] * g[r] + b[r];
+            }
+        }
+        return output;
     }
 }
