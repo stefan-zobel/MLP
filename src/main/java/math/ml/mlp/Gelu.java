@@ -24,4 +24,18 @@ public class Gelu extends Activation {
     public Gelu() {
         super(GELU::geluF, GELU::dgeluF_dx);
     }
+
+    @Override
+    void applyForward(float[] in, float[] out, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            out[i] = GELU.geluF(in[i]);
+        }
+    }
+
+    @Override
+    void applyBackward(float[] preAct, float[] grads, float[] out, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            out[i] = grads[i] * GELU.dgeluF_dx(preAct[i]);
+        }
+    }
 }

@@ -16,6 +16,7 @@
 package math.ml.mlp;
 
 import net.jamu.matrix.FFunction;
+import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 /** An element-wise activation, given as a function and its derivative. */
@@ -41,7 +42,10 @@ public class Activation extends AbstractLayer {
     public MatrixF forward(MatrixF input) {
         // j x m
         super.forward(input);
-        return input.map(fun);
+        float[] in = input.getArrayUnsafe();
+        MatrixF output = Matrices.sameDimF(input);
+        applyForward(in, output.getArrayUnsafe(), 0, in.length);
+        return output;
     }
 
     // outputGrads : j x m
@@ -51,8 +55,54 @@ public class Activation extends AbstractLayer {
             return null;
         }
         // (j x m) o (j x m)
-        MatrixF out = outputGrads.hadamard(input.mapInplace(deriv));
+        checkSameDimension(outputGrads);
+        float[] grads = outputGrads.getArrayUnsafe();
+        MatrixF out = Matrices.sameDimF(outputGrads);
+        applyBackward(input.getArrayUnsafe(), grads, out.getArrayUnsafe(), 0, grads.length);
         input = null;
         return out;
+    }
+
+    /**
+     * Writes the activation of {@code in[from, to)} into {@code out}.
+     *
+     * <p>The arrays are the column-major backing arrays of the matrices, so a range
+     * of columns is the contiguous range {@code [firstColumn * rows, ...)}. Every
+     * subclass overrides this with its own loop: routing all of them through one
+     * shared {@link FFunction} call site is what costs the JIT its inlining.
+     *
+     * @param in   the pre-activation values
+     * @param out  where to write the result
+     * @param from index of the first element to touch
+     * @param to   index one past the last element to touch
+     */
+    void applyForward(float[] in, float[] out, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            out[i] = fun.apply(in[i]);
+        }
+    }
+
+    /**
+     * Writes {@code grads * deriv(preAct)} over {@code [from, to)} into {@code out}.
+     *
+     * @param preAct the cached pre-activation values
+     * @param grads  the gradients with respect to this layer's output
+     * @param out    where to write the result
+     * @param from   index of the first element to touch
+     * @param to     index one past the last element to touch
+     */
+    void applyBackward(float[] preAct, float[] grads, float[] out, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            out[i] = grads[i] * deriv.apply(preAct[i]);
+        }
+    }
+
+    /** The matrix API checks this for us; a raw loop has to do it itself. */
+    private void checkSameDimension(MatrixF outputGrads) {
+        if (input.numRows() != outputGrads.numRows() || input.numColumns() != outputGrads.numColumns()) {
+            throw new IllegalArgumentException("dimension mismatch: forward saw " + input.numRows() + " x "
+                    + input.numColumns() + ", backward got " + outputGrads.numRows() + " x "
+                    + outputGrads.numColumns());
+        }
     }
 }

@@ -24,4 +24,20 @@ public class Relu extends Activation {
     public Relu() {
         super(RELU::reluF, RELU::dreluF_dx);
     }
+
+    @Override
+    void applyForward(float[] in, float[] out, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            out[i] = RELU.reluF(in[i]);
+        }
+    }
+
+    @Override
+    void applyBackward(float[] preAct, float[] grads, float[] out, int from, int to) {
+        // deliberately not "preAct[i] > 0 ? grads[i] : 0": dreluF_dx propagates NaN,
+        // and the product yields -0.0f where a select would yield +0.0f
+        for (int i = from; i < to; ++i) {
+            out[i] = grads[i] * RELU.dreluF_dx(preAct[i]);
+        }
+    }
 }

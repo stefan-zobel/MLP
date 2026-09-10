@@ -61,17 +61,35 @@ public class Dropout extends AbstractLayer {
         this.rng = new SplittableRandom(seed);
     }
 
+    /** Answers from the rate, not from the mode, so it is stable before training starts. */
+    @Override
+    public boolean mutatesInput() {
+        return dropoutRate > 0.0f;
+    }
+
+    @Override
+    public boolean mutatesGradients() {
+        return dropoutRate > 0.0f;
+    }
+
     // input: j x m, modified in place
     @Override
     public MatrixF forward(MatrixF input) {
         if (mode == NetworkMode.INFER || dropoutRate <= 0.0f) {
             return input;
         }
-        float rate = dropoutRate;
-        float scale = scalingFactor;
-        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f, rng.nextLong())
-                .mapInplace(u -> u < rate ? 0.0f : scale);
-        return input.hadamard(mask, input);
+        // One pass instead of three. The draw, the threshold and the masking all walk
+        // the same j x m elements, and going through an FFunction to threshold is what
+        // puts this layer on the shared, megamorphic map call site.
+        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f, rng.nextLong());
+        float[] m = mask.getArrayUnsafe();
+        float[] x = input.getArrayUnsafe();
+        for (int i = 0; i < m.length; ++i) {
+            float factor = m[i] < dropoutRate ? 0.0f : scalingFactor;
+            m[i] = factor;
+            x[i] *= factor;
+        }
+        return input;
     }
 
     @Override
