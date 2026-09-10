@@ -59,7 +59,7 @@ class DropoutTest {
         layer.setMode(NetworkMode.TRAIN);
 
         MatrixF activations = layer.forward(ones(rows, cols));
-        MatrixF gradients = layer.backward(ones(rows, cols), 0.0f);
+        MatrixF gradients = layer.backward(ones(rows, cols));
 
         float scale = 1.0f / (1.0f - 0.4f);
         int dropped = 0;
@@ -115,7 +115,7 @@ class DropoutTest {
         layer.forward(ones(10, 8));
         // a smaller batch must not read stale mask bits
         MatrixF activations = layer.forward(ones(10, 3));
-        MatrixF gradients = layer.backward(ones(10, 3), 0.0f);
+        MatrixF gradients = layer.backward(ones(10, 3));
         for (int c = 0; c < 3; ++c) {
             for (int r = 0; r < 10; ++r) {
                 boolean wasDropped = activations.getUnsafe(r, c) == 0.0f;
@@ -129,7 +129,7 @@ class DropoutTest {
         Dropout layer = new Dropout(0.3f);
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(4, 3, 63L));
-        assertNull(layer.backward(input(4, 3, 64L), 0.1f));
+        assertNull(layer.backward(input(4, 3, 64L)));
     }
 
     @Test

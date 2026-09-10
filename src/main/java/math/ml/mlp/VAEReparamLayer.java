@@ -166,7 +166,7 @@ public class VAEReparamLayer extends AbstractLayer {
      *         {@code null} in INFER mode
      */
     @Override
-    public MatrixF backward(MatrixF dLdz, float unused) {
+    public MatrixF backward(MatrixF dLdz) {
         if (mode == NetworkMode.INFER) {
             return null;
         }

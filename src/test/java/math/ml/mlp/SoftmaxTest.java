@@ -71,6 +71,6 @@ class SoftmaxTest {
         Softmax layer = new Softmax();
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(4, 3, 54L));
-        assertNull(layer.backward(input(4, 3, 55L), 0.1f));
+        assertNull(layer.backward(input(4, 3, 55L)));
     }
 }

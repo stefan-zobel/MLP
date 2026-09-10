@@ -69,7 +69,7 @@ final class GradientCheck {
     static void assertInputGradient(Layer layer, MatrixF x, MatrixF w, double tolerance) {
         layer.setMode(NetworkMode.TRAIN);
         layer.forward(x.copy());
-        MatrixF analytic = layer.backward(w.copy(), 0.0f);
+        MatrixF analytic = layer.backward(w.copy());
 
         double worst = 0.0;
         int worstRow = -1;
@@ -101,12 +101,36 @@ final class GradientCheck {
         return dot(w, layer.forward(perturbed));
     }
 
+    /** An Sgd over one layer's parameters, for the tests that train a bare layer. */
+    static Sgd sgdOver(Layer layer, float rate) {
+        Sgd sgd = new Sgd(rate);
+        for (Parameter p : layer.parameters()) {
+            sgd.add(p);
+        }
+        return sgd;
+    }
+
     /** Reads a private field, for the layers that cache state the contract depends on. */
     @SuppressWarnings("unchecked")
     static <T> T field(Object target, String name) throws ReflectiveOperationException {
         Field f = target.getClass().getDeclaredField(name);
         f.setAccessible(true);
         return (T) f.get(target);
+    }
+
+    /**
+     * Reads a matrix-valued field, unwrapping a {@link Parameter} so that a trainable
+     * parameter and a plain cached matrix read the same. The result is the live buffer,
+     * which the callers that perturb a parameter depend on.
+     */
+    static MatrixF value(Object target, String name) throws ReflectiveOperationException {
+        Object f = field(target, name);
+        return f instanceof Parameter p ? p.value() : (MatrixF) f;
+    }
+
+    /** Reads the gradient buffer of a parameter field. */
+    static MatrixF grad(Object target, String name) throws ReflectiveOperationException {
+        return GradientCheck.<Parameter>field(target, name).grad();
     }
 
     private GradientCheck() {

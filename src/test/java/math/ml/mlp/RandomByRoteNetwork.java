@@ -83,10 +83,10 @@ public class RandomByRoteNetwork extends AbstractNetwork {
         MatrixF input = Matrices.randomUniformF(INPUT_SIZE, BATCH_SIZE, -1.0f, 1.0f, seeds.nextLong());
         input = Statistics.zscoreColumnsInplace(input);
 
-        final float learningRate = 0.008f;
+        net.optimizer(new Sgd(0.008f));
 
         for (int i = 0; i < 10_000 && !stop; ++i) {
-            net.train(input, EXPECT, learningRate);
+            net.train(input, EXPECT);
         }
 
         System.out.println("\nDone.");

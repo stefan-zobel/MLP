@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import net.jamu.matrix.Matrices;
@@ -42,9 +43,9 @@ public class Hidden extends AbstractLayer {
     private static final String STORE_DIR = "./checkpoints/";
 
     /** The weight matrix, out x in. */
-    protected final MatrixF weights;
+    protected final Parameter weights;
     /** The bias column, out x 1. */
-    protected final MatrixF biases;
+    protected final Parameter biases;
     /** Identifies the parameter files of this layer. */
     protected final String name;
     /** Whether {@link #storeParameters()} writes anything. */
@@ -133,37 +134,51 @@ public class Hidden extends AbstractLayer {
         this.storeWeightsAndBiases = storeWeightsAndBiases;
         int i = in;
         int j = out;
+        MatrixF w;
+        MatrixF b;
         if (loadWeightsAndBiases) {
-            weights = loadWeights();
-            biases = loadBiases();
+            w = loadWeights();
+            b = loadBiases();
         } else {
             float bound = init.bound(i, j);
-            weights = Matrices.randomUniformF(j, i, -bound, bound, seed);
-            biases = Matrices.createF(j, 1);
+            w = Matrices.randomUniformF(j, i, -bound, bound, seed);
+            b = Matrices.createF(j, 1);
         }
+        // weight decay applies to the matrix but not to the bias, the standard rule
+        weights = new Parameter("weights", w, true);
+        biases = new Parameter("biases", b, false);
+    }
+
+    /** The weight matrix and the bias column. */
+    @Override
+    public List<Parameter> parameters() {
+        return List.of(weights, biases);
     }
 
     @Override
     public MatrixF forward(MatrixF input) {
         super.forward(input);
         // (j x i) * (i x m) + (j x m) = (j x m)
-        return weights.times(input).addBroadcastedVectorInplace(biases);
+        return weights.value().times(input).addBroadcastedVectorInplace(biases.value());
     }
 
     // outputGrads : j x m
     @Override
-    public MatrixF backward(MatrixF outputGrads, float learningRate) {
+    public MatrixF backward(MatrixF outputGrads) {
         if (mode == NetworkMode.INFER) {
             return null;
         }
         // (i x j) * (j x m) = (i x m)
-        MatrixF inputErrJacobian = weights.transposedTimes(outputGrads);
-        MatrixF avgWeightsGrad = outputGrads.timesTransposed(input).scaleInplace(1.0f / outputGrads.numColumns());
+        MatrixF inputErrJacobian = weights.value().transposedTimes(outputGrads);
+        // timesTransposed() is transBmult() into a freshly created matrix, so writing into
+        // the parameter's own buffer is the same call without the j x i allocation. The
+        // result is not bit-identical to the allocating form, because MKL's sgemm depends
+        // on the alignment of its destination; a fixed buffer is in fact the more stable
+        // of the two, since its alignment no longer varies with the allocation history.
+        outputGrads.transBmult(input, weights.grad()).scaleInplace(1.0f / outputGrads.numColumns());
         input = null;
-        // j x 1
-        MatrixF avgBiasesGrad = Matrices.colsAverage(outputGrads);
-        weights.addInplace(-learningRate, avgWeightsGrad);
-        biases.addInplace(-learningRate, avgBiasesGrad);
+        // j x 1, and jamu has no colsAverage() with a destination; too small to matter
+        biases.grad().setInplace(Matrices.colsAverage(outputGrads));
         return inputErrJacobian;
     }
 
@@ -178,14 +193,14 @@ public class Hidden extends AbstractLayer {
     /** Writes the weights if storing was enabled at construction time. */
     public void storeWeights() {
         if (storeWeightsAndBiases) {
-            store(STORE_DIR + "w_" + name, weights);
+            store(STORE_DIR + "w_" + name, weights.value());
         }
     }
 
     /** Writes the biases if storing was enabled at construction time. */
     public void storeBiases() {
         if (storeWeightsAndBiases) {
-            store(STORE_DIR + "b_" + name, biases);
+            store(STORE_DIR + "b_" + name, biases.value());
         }
     }
 

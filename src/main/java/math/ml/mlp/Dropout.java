@@ -93,7 +93,7 @@ public class Dropout extends AbstractLayer {
     }
 
     @Override
-    public MatrixF backward(MatrixF grads, float unused) {
+    public MatrixF backward(MatrixF grads) {
         if (mode == NetworkMode.INFER) {
             return null;
         }

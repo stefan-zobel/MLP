@@ -72,7 +72,7 @@ class SigmoidBCELossTest {
         bce.setMode(NetworkMode.TRAIN);
         bce.setExpectedValues(targets);
 
-        MatrixF separate = sigmoid.backward(bce.forward(sigmoid.forward(logits.copy())), 0.0f);
+        MatrixF separate = sigmoid.backward(bce.forward(sigmoid.forward(logits.copy())));
         assertEquals(0.0f, separate.getUnsafe(0, 0), 0.0f, "the unfused pair is expected to lose this gradient");
         assertEquals(1.0f, trainForward(logits, targets).getUnsafe(0, 0), 1e-6f);
     }
@@ -99,7 +99,7 @@ class SigmoidBCELossTest {
         loss.setExpectedValues(targets);
 
         MatrixF fromForward = loss.forward(logits);
-        MatrixF fromBackward = loss.backward(null, 0.0f);
+        MatrixF fromBackward = loss.backward(null);
         assertNotNull(fromBackward);
         for (int c = 0; c < 2; ++c) {
             for (int r = 0; r < 5; ++r) {

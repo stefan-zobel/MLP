@@ -52,7 +52,7 @@ import net.jamu.matrix.Statistics;
  *  SigmoidBCELoss                   &larr; fused sigmoid + reconstruction loss
  * </pre>
  *
- * <h2>No changes to AbstractNetwork.train() necessary</h2>
+ * <h2>No special handling in AbstractNetwork.train() necessary</h2>
  * The outer training loop in {@link AbstractNetwork#train} sees a strictly
  * sequential list of layers and is completely unaware of the internal
  * branching structure inside {@link ParallelBranches}. The split/merge
@@ -160,7 +160,7 @@ public class MNIST_VAE extends AbstractNetwork {
         // -----------------------------------------------------------------------
         // 0.010 rather than 0.001: measured over 6 epochs, mean per-pixel BCE on 2000
         // test images drops from about 0.178 to 0.138
-        final float lr = 0.010f;
+        net.optimizer(new Sgd(0.010f));
 
         long seed = seeds.nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
@@ -171,7 +171,7 @@ public class MNIST_VAE extends AbstractNetwork {
                 int startCol = b * BATCH_SIZE;
                 MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
                 // an autoencoder reconstructs its own input: the batch is its own target
-                net.train(input, input, lr);
+                net.train(input, input);
             }
 
             double avgLoss = Arithmetic.round(epochLossSum / batchesInEpoch, 6);

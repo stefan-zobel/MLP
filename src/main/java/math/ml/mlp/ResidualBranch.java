@@ -139,6 +139,16 @@ public class ResidualBranch extends AbstractLayer {
         }
     }
 
+    /** Collects the parameters of every layer in the branch, in branch order. */
+    @Override
+    public List<Parameter> parameters() {
+        List<Parameter> all = new ArrayList<>();
+        for (Layer layer : branch) {
+            all.addAll(layer.parameters());
+        }
+        return all;
+    }
+
     /**
      * Computes {@code y = x + F(x)}.
      *
@@ -181,7 +191,7 @@ public class ResidualBranch extends AbstractLayer {
      * @return gradient w.r.t. the input {@code x}; {@code null} in INFER mode
      */
     @Override
-    public MatrixF backward(MatrixF grads, float learningRate) {
+    public MatrixF backward(MatrixF grads) {
         if (mode == NetworkMode.INFER) {
             return null;
         }
@@ -192,7 +202,7 @@ public class ResidualBranch extends AbstractLayer {
         MatrixF branchGrads = copyGradients ? copyOf(grads) : grads;
         ListIterator<Layer> it = branch.listIterator(branch.size());
         while (it.hasPrevious()) {
-            branchGrads = it.previous().backward(branchGrads, learningRate);
+            branchGrads = it.previous().backward(branchGrads);
         }
 
         // dL/dx = grads (identity path) + branchGrads (transformation path)

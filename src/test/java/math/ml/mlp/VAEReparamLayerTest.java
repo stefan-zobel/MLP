@@ -71,7 +71,7 @@ class VAEReparamLayerTest {
         MatrixF sigma = GradientCheck.<MatrixF>field(layer, "sigma").copy();
 
         MatrixF dLdz = input(LATENT, BATCH, 33L);
-        MatrixF g = layer.backward(dLdz, 0.0f);
+        MatrixF g = layer.backward(dLdz);
 
         for (int c = 0; c < BATCH; ++c) {
             for (int r = 0; r < LATENT; ++r) {
@@ -90,7 +90,7 @@ class VAEReparamLayerTest {
         layer.forward(in);
 
         // zero reconstruction gradient isolates the KL term
-        MatrixF g = layer.backward(Matrices.createF(LATENT, BATCH), 0.0f);
+        MatrixF g = layer.backward(Matrices.createF(LATENT, BATCH));
 
         for (int c = 0; c < BATCH; ++c) {
             for (int r = 0; r < LATENT; ++r) {
@@ -109,7 +109,7 @@ class VAEReparamLayerTest {
         VAEReparamLayer layer = new VAEReparamLayer(LATENT);
         layer.setMode(NetworkMode.TRAIN);
         layer.forward(input(2 * LATENT, BATCH, 35L));
-        MatrixF g = layer.backward(input(LATENT, BATCH, 36L), 0.0f);
+        MatrixF g = layer.backward(input(LATENT, BATCH, 36L));
         assertEquals(2 * LATENT, g.numRows());
         assertEquals(BATCH, g.numColumns());
     }
@@ -153,7 +153,7 @@ class VAEReparamLayerTest {
         VAEReparamLayer layer = new VAEReparamLayer(LATENT);
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(2 * LATENT, BATCH, 39L));
-        assertNull(layer.backward(input(LATENT, BATCH, 40L), 0.1f));
+        assertNull(layer.backward(input(LATENT, BATCH, 40L)));
     }
 
     @Test

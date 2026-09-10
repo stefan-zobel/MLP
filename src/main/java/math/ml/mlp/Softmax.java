@@ -47,7 +47,7 @@ public final class Softmax extends AbstractLayer {
     }
 
     @Override
-    public MatrixF backward(MatrixF lossGrads, float unused) {
+    public MatrixF backward(MatrixF lossGrads) {
         if (mode == NetworkMode.INFER) {
             return null;
         }

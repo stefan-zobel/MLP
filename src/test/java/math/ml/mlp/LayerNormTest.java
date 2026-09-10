@@ -18,9 +18,10 @@ package math.ml.mlp;
 import static math.ml.mlp.GradientCheck.H;
 import static math.ml.mlp.GradientCheck.assertInputGradient;
 import static math.ml.mlp.GradientCheck.dot;
-import static math.ml.mlp.GradientCheck.field;
+import static math.ml.mlp.GradientCheck.grad;
 import static math.ml.mlp.GradientCheck.input;
 import static math.ml.mlp.GradientCheck.relativeError;
+import static math.ml.mlp.GradientCheck.value;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -110,26 +111,25 @@ class LayerNormTest {
 
     @Test
     void gammaAndBetaUpdatesMatchNumericalGradients() throws Exception {
-        float learningRate = 0.1f;
         MatrixF x = input(FEATURES, BATCH, 706L);
         MatrixF w = input(FEATURES, BATCH, 707L);
 
         LayerNorm layer = new LayerNorm(FEATURES);
         layer.setMode(NetworkMode.TRAIN);
-        MatrixF gammaBefore = GradientCheck.<MatrixF>field(layer, "gamma").copy();
-        MatrixF betaBefore = GradientCheck.<MatrixF>field(layer, "beta").copy();
-
         layer.forward(x.copy());
-        layer.backward(w.copy(), learningRate);
+        layer.backward(w.copy());
 
-        MatrixF gamma = field(layer, "gamma");
-        MatrixF beta = field(layer, "beta");
+        // the gradient the optimizer will consume, read directly rather than recovered
+        // from how far an SGD step moved the parameter
+        MatrixF dGamma = grad(layer, "gamma");
+        MatrixF dBeta = grad(layer, "beta");
         for (int r = 0; r < FEATURES; ++r) {
-            double appliedGamma = (gammaBefore.getUnsafe(r, 0) - gamma.getUnsafe(r, 0)) / learningRate * BATCH;
-            double appliedBeta = (betaBefore.getUnsafe(r, 0) - beta.getUnsafe(r, 0)) / learningRate * BATCH;
-            assertTrue(relativeError(numericalParameterGradient(x, w, "gamma", r), appliedGamma) <= 2e-2,
+            // the buffers hold the mean over the batch; the numerical check sums
+            double analyticGamma = dGamma.getUnsafe(r, 0) * BATCH;
+            double analyticBeta = dBeta.getUnsafe(r, 0) * BATCH;
+            assertTrue(relativeError(numericalParameterGradient(x, w, "gamma", r), analyticGamma) <= 2e-2,
                     "gamma gradient mismatch in row " + r);
-            assertTrue(relativeError(numericalParameterGradient(x, w, "beta", r), appliedBeta) <= 2e-2,
+            assertTrue(relativeError(numericalParameterGradient(x, w, "beta", r), analyticBeta) <= 2e-2,
                     "beta gradient mismatch in row " + r);
         }
     }
@@ -137,10 +137,14 @@ class LayerNormTest {
     @Test
     void parametersSurviveAWriteReadRoundTrip() throws Exception {
         LayerNorm original = new LayerNorm(FEATURES);
+        // the optimizer step is what moves gamma and beta at all; without it both
+        // layers would still hold gamma 1 and beta 0 and the test would pass vacuously
+        Sgd sgd = GradientCheck.sgdOver(original, 0.05f);
         for (int i = 0; i < 20; ++i) {
             original.setMode(NetworkMode.TRAIN);
             original.forward(input(FEATURES, BATCH, 800L + i));
-            original.backward(input(FEATURES, BATCH, 900L + i), 0.05f);
+            original.backward(input(FEATURES, BATCH, 900L + i));
+            sgd.step();
         }
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -149,8 +153,8 @@ class LayerNormTest {
         restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
 
         for (String name : new String[] { "gamma", "beta" }) {
-            MatrixF a = field(original, name);
-            MatrixF b = field(restored, name);
+            MatrixF a = value(original, name);
+            MatrixF b = value(restored, name);
             for (int r = 0; r < FEATURES; ++r) {
                 assertEquals(a.getUnsafe(r, 0), b.getUnsafe(r, 0), 0.0f, name + " differs in row " + r);
             }
@@ -180,7 +184,7 @@ class LayerNormTest {
         LayerNorm layer = new LayerNorm(FEATURES);
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(FEATURES, BATCH, 710L));
-        assertNull(layer.backward(input(FEATURES, BATCH, 711L), 0.1f));
+        assertNull(layer.backward(input(FEATURES, BATCH, 711L)));
     }
 
     @Test
@@ -196,7 +200,7 @@ class LayerNormTest {
     private static double lossWithParameter(MatrixF x, MatrixF w, String name, int row, float delta) throws Exception {
         LayerNorm probe = new LayerNorm(FEATURES);
         probe.setMode(NetworkMode.TRAIN);
-        MatrixF parameter = field(probe, name);
+        MatrixF parameter = value(probe, name);
         parameter.setUnsafe(row, 0, parameter.getUnsafe(row, 0) + delta);
         return dot(w, probe.forward(x.copy()));
     }

@@ -75,7 +75,7 @@ class NetworkPersistenceTest {
         }
 
         @Override
-        public MatrixF backward(MatrixF grads, float learningRate) {
+        public MatrixF backward(MatrixF grads) {
             return grads;
         }
 

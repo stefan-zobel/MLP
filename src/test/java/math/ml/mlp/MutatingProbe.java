@@ -52,7 +52,7 @@ final class MutatingProbe extends AbstractLayer {
     }
 
     @Override
-    public MatrixF backward(MatrixF grads, float learningRate) {
+    public MatrixF backward(MatrixF grads) {
         Arrays.fill(grads.getArrayUnsafe(), Float.NaN);
         return filled(0.0f);
     }

@@ -93,7 +93,7 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         // no dropout and no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
-        final float learningRate = 0.5f; // XXX
+        net.optimizer(new Sgd(0.5f)); // XXX
 
         // shuffle images and labels randomly, both with the same seed so they stay aligned
         long seed = seeds.nextLong();
@@ -108,7 +108,7 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
                 int startCol = b * BATCH_SIZE;
                 MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
                 MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-                net.train(input, expected, learningRate);
+                net.train(input, expected);
             }
             double trainingAccuracy = Arithmetic.round(epochAccuraciesSum / NUM_BATCHES_PER_EPOCH, 6);
             double avgTrainingLoss = Arithmetic.round(epochLossesSum / NUM_BATCHES_PER_EPOCH, 6);
