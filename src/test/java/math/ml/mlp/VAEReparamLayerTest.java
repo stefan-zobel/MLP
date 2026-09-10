@@ -18,6 +18,7 @@ package math.ml.mlp;
 import static math.ml.mlp.GradientCheck.field;
 import static math.ml.mlp.GradientCheck.input;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,8 +28,9 @@ import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 /**
- * The sampled epsilon cannot be seeded, so these tests assert the layer's
- * identities against its own cached state rather than against finite differences.
+ * Epsilon is redrawn on every forward pass, so most of these tests assert the
+ * layer's identities against its own cached state rather than against finite
+ * differences.
  */
 class VAEReparamLayerTest {
 
@@ -152,5 +154,47 @@ class VAEReparamLayerTest {
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(2 * LATENT, BATCH, 39L));
         assertNull(layer.backward(input(LATENT, BATCH, 40L), 0.1f));
+    }
+
+    @Test
+    void theSameSeedProducesTheSameSequenceOfSamples() {
+        VAEReparamLayer a = new VAEReparamLayer(LATENT, 1.0f, 9L);
+        VAEReparamLayer b = new VAEReparamLayer(LATENT, 1.0f, 9L);
+        a.setMode(NetworkMode.TRAIN);
+        b.setMode(NetworkMode.TRAIN);
+        MatrixF in = input(2 * LATENT, BATCH, 41L);
+
+        MatrixF previous = null;
+        for (int pass = 0; pass < 4; ++pass) {
+            MatrixF fromA = a.forward(in.copy());
+            MatrixF fromB = b.forward(in.copy());
+            assertFalse(differs(fromA, fromB), "the two layers diverged in pass " + pass);
+            if (previous != null) {
+                // the seed must fix the sequence, not repeat one epsilon forever
+                assertTrue(differs(previous, fromA), "pass " + pass + " repeated the previous epsilon");
+            }
+            previous = fromA.copy();
+        }
+    }
+
+    @Test
+    void aDifferentSeedProducesDifferentSamples() {
+        VAEReparamLayer a = new VAEReparamLayer(LATENT, 1.0f, 9L);
+        VAEReparamLayer b = new VAEReparamLayer(LATENT, 1.0f, 10L);
+        a.setMode(NetworkMode.TRAIN);
+        b.setMode(NetworkMode.TRAIN);
+        MatrixF in = input(2 * LATENT, BATCH, 42L);
+        assertTrue(differs(a.forward(in.copy()), b.forward(in.copy())));
+    }
+
+    private static boolean differs(MatrixF a, MatrixF b) {
+        for (int c = 0; c < a.numColumns(); ++c) {
+            for (int r = 0; r < a.numRows(); ++r) {
+                if (a.getUnsafe(r, c) != b.getUnsafe(r, c)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

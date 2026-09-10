@@ -17,14 +17,17 @@ package math.ml.mlp;
 
 import static math.ml.mlp.GradientCheck.input;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.SplittableRandom;
 
 import org.junit.jupiter.api.Test;
 
+import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 class NetworkTrainingTest {
@@ -74,6 +77,39 @@ class NetworkTrainingTest {
     void trainReturnsTheNetworkSoCallsCanBeChained() {
         Net net = netWith(new RecordingLoss());
         assertSame(net, net.train(input(4, 2, 409L), input(4, 2, 410L), 0.01f));
+    }
+
+    @Test
+    void thesameSeedTrainsTwoNetworksIdentically() {
+        // the payoff of seeding: everything random in a run is derived from one long
+        assertEquals(trainingLosses(11L), trainingLosses(11L));
+    }
+
+    @Test
+    void aDifferentSeedTrainsDifferently() {
+        assertNotEquals(trainingLosses(11L), trainingLosses(12L));
+    }
+
+    /** Trains a Hidden + Dropout net for a few batches and returns the loss per batch. */
+    private static List<Float> trainingLosses(long baseSeed) {
+        SplittableRandom seeds = new SplittableRandom(baseSeed);
+        List<Float> losses = new ArrayList<>();
+
+        SigmoidBCELoss loss = new SigmoidBCELoss();
+        loss.registerLossCallback(l -> losses.add(Matrices.colsAverage(l).toScalar()));
+
+        Net net = new Net();
+        net.add(new Hidden(8, 5, "a", seeds.nextLong()));
+        net.add(new Dropout(0.3f, seeds.nextLong()));
+        net.add(new Relu());
+        net.add(new Hidden(5, 3, "b", seeds.nextLong()));
+        net.add(loss);
+
+        MatrixF targets = Matrices.randomUniformF(3, 6, 0.0f, 1.0f, 511L);
+        for (int batch = 0; batch < 5; ++batch) {
+            net.train(input(8, 6, 512L), targets, 0.05f);
+        }
+        return losses;
     }
 
     private static Net netWith(Loss loss) {

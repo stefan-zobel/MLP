@@ -20,18 +20,29 @@ import java.util.ListIterator;
 
 import net.jamu.matrix.MatrixF;
 
+/** A network built as a flat list of layers, the last one a {@link Loss}. */
 public abstract class AbstractNetwork implements TrainableNetwork {
 
+    /** The layers in forward order. */
     protected ArrayList<Layer> layers = new ArrayList<>();
 
+    /** Number of batches trained so far. */
     protected int batchCount = 0;
 
+    /** Creates an empty network; add the layers with {@link #add(Layer)}. */
     public AbstractNetwork() {
     }
+
+    /**
+     * Whether {@link #train} has to protect the caller's matrix. Any layer, not just
+     * the first: a pass-through layer hands its argument straight on.
+     */
+    private boolean copyInput = false;
 
     @Override
     public Network add(Layer layer) {
         layers.add(layer);
+        copyInput |= layer.mutatesInput();
         return this;
     }
 
@@ -46,6 +57,12 @@ public abstract class AbstractNetwork implements TrainableNetwork {
         }
         // hand the targets to the loss for exactly this batch
         lossLayer.setExpectedValues(expected);
+        if (copyInput) {
+            // a layer in this net writes into what it is given, and the caller's
+            // matrix is usually a batch it wants to reuse. infer() needs no such
+            // guard: no layer mutates in INFER mode.
+            input = input.copy();
+        }
         for (Layer layer : layers) {
             layer.setMode(NetworkMode.TRAIN);
             input = layer.forward(input);

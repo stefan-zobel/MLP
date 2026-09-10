@@ -15,7 +15,8 @@
  */
 package math.ml.mlp;
 
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
+import java.util.SplittableRandom;
 
 import math.cern.Arithmetic;
 import math.ml.loader.MNIST;
@@ -63,26 +64,32 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
     private static double epochLossesSum = 0.0;
 
     public static void main(String[] args) {
+        // pass this seed back as the first argument to repeat a run exactly
+        long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        System.out.println("seed: " + baseSeed);
+        SplittableRandom seeds = new SplittableRandom(baseSeed);
+
         MNIST_TrainingNetwork net = new MNIST_TrainingNetwork();
 //        CrossEntropyLoss loss = new CrossEntropyLoss(); // XXX
         SoftmaxCrossEntropyLoss loss = new SoftmaxCrossEntropyLoss();
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
         loss.registerLossCallback(net::onLossComputationCompleted);
 
-        net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true));
+        // He ahead of every ReLU, Glorot on the output layer, which feeds the loss directly
+        net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true, Init.HE, seeds.nextLong()));
         net.add(new Relu()); // 768
-        net.add(new Hidden(768, 384, "layer2", false, true));
+        net.add(new Hidden(768, 384, "layer2", false, true, Init.HE, seeds.nextLong()));
         net.add(new Relu()); // 384
-        net.add(new Hidden(384, 256, "layer3", false, true));
+        net.add(new Hidden(384, 256, "layer3", false, true, Init.HE, seeds.nextLong()));
         net.add(new Relu()); // 256
-        net.add(new Hidden(256, NUM_LABELS, "layer4", false, true));
+        net.add(new Hidden(256, NUM_LABELS, "layer4", false, true, seeds.nextLong()));
         // no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
         final float learningRate = 0.001f; // XXX ?
 
-        // shuffle images and labels randomly
-        long seed = ThreadLocalRandom.current().nextLong();
+        // shuffle images and labels randomly, both with the same seed so they stay aligned
+        long seed = seeds.nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
@@ -114,7 +121,7 @@ public class MNIST_TrainingNetwork extends AbstractNetwork {
                 break;
             }
             // reshuffle between epochs
-            seed = ThreadLocalRandom.current().nextLong();
+            seed = seeds.nextLong();
             Statistics.shuffleColumnsInplace(IMAGES, seed);
             Statistics.shuffleColumnsInplace(EXPECT, seed);
         }

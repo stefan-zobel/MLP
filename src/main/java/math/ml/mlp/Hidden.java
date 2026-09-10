@@ -21,10 +21,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.concurrent.ThreadLocalRandom;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
+/** A fully connected layer, {@code y = W x + b}. */
 public class Hidden extends AbstractLayer {
 
     /**
@@ -39,18 +41,94 @@ public class Hidden extends AbstractLayer {
      */
     private static final String STORE_DIR = "./checkpoints/";
 
-    // j x i
+    /** The weight matrix, out x in. */
     protected final MatrixF weights;
-    // j x 1
+    /** The bias column, out x 1. */
     protected final MatrixF biases;
+    /** Identifies the parameter files of this layer. */
     protected final String name;
+    /** Whether {@link #storeParameters()} writes anything. */
     protected final boolean storeWeightsAndBiases;
 
+    /**
+     * Creates a layer with Glorot initialization from an unseeded draw.
+     *
+     * @param in   number of input features
+     * @param out  number of output features
+     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     */
     public Hidden(int in, int out, String name) {
-        this(in, out, name, false, false);
+        this(in, out, name, false, false, ThreadLocalRandom.current().nextLong());
     }
 
+    /**
+     * Creates a layer whose weight initialization is reproducible.
+     *
+     * @param in   number of input features
+     * @param out  number of output features
+     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param seed seed for the weight draw
+     */
+    public Hidden(int in, int out, String name, long seed) {
+        this(in, out, name, false, false, Init.GLOROT, seed);
+    }
+
+    /**
+     * Creates a layer with an explicit initialization scheme; use {@link Init#HE}
+     * when a ReLU or GELU follows.
+     *
+     * @param in   number of input features
+     * @param out  number of output features
+     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param init the weight initialization scheme
+     * @param seed seed for the weight draw
+     */
+    public Hidden(int in, int out, String name, Init init, long seed) {
+        this(in, out, name, false, false, init, seed);
+    }
+
+    /**
+     * Creates a layer with Glorot initialization from an unseeded draw.
+     *
+     * @param in                     number of input features
+     * @param out                    number of output features
+     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
+     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
+     */
     public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases) {
+        this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * The overloads without a {@code seed} draw one, so a run is reproducible only
+     * if the seed is passed in.
+     *
+     * @param in                     number of input features
+     * @param out                    number of output features
+     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
+     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param seed                   seed for the weight draw, unused when the parameters are loaded
+     */
+    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
+            long seed) {
+        this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, Init.GLOROT, seed);
+    }
+
+    /**
+     * The overloads without an {@code init} use {@link Init#GLOROT}.
+     *
+     * @param in                     number of input features
+     * @param out                    number of output features
+     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
+     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param init                   the weight initialization scheme
+     * @param seed                   seed for the weight draw, unused when the parameters are loaded
+     */
+    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
+            Init init, long seed) {
         this.name = name;
         this.storeWeightsAndBiases = storeWeightsAndBiases;
         int i = in;
@@ -59,9 +137,8 @@ public class Hidden extends AbstractLayer {
             weights = loadWeights();
             biases = loadBiases();
         } else {
-            // Glorot uniform initialization
-            float bound = (float) Math.sqrt(6.0 / (i + j));
-            weights = Matrices.randomUniformF(j, i, -bound, bound);
+            float bound = init.bound(i, j);
+            weights = Matrices.randomUniformF(j, i, -bound, bound, seed);
             biases = Matrices.createF(j, 1);
         }
     }
@@ -98,12 +175,14 @@ public class Hidden extends AbstractLayer {
         return load(LOAD_DIR + "b_" + name);
     }
 
+    /** Writes the weights if storing was enabled at construction time. */
     public void storeWeights() {
         if (storeWeightsAndBiases) {
             store(STORE_DIR + "w_" + name, weights);
         }
     }
 
+    /** Writes the biases if storing was enabled at construction time. */
     public void storeBiases() {
         if (storeWeightsAndBiases) {
             store(STORE_DIR + "b_" + name, biases);

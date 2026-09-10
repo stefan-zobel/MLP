@@ -17,6 +17,7 @@ package math.ml.mlp;
 
 import net.jamu.matrix.MatrixF;
 
+/** One stage of a network: a forward pass, a backward pass and a mode. */
 public interface Layer {
 
     /**
@@ -36,7 +37,34 @@ public interface Layer {
      */
     MatrixF backward(MatrixF grads, float learningRate);
 
+    /**
+     * Switches between training and inference.
+     *
+     * @param mode the mode to run in
+     */
     void setMode(NetworkMode mode);
+
+    /**
+     * Whether {@link #forward(MatrixF)} may overwrite the matrix it is handed.
+     * Composite layers copy a shared input before passing it on if any of their
+     * sub-layers says yes.
+     *
+     * @return {@code true} if the forward pass writes into its argument
+     */
+    default boolean mutatesInput() {
+        return false;
+    }
+
+    /**
+     * Whether {@link #backward(MatrixF, float)} may overwrite the matrix it is
+     * handed. Neither predicate says anything about the matrix a layer
+     * <em>returns</em>, which may still be one of its own buffers.
+     *
+     * @return {@code true} if the backward pass writes into its argument
+     */
+    default boolean mutatesGradients() {
+        return false;
+    }
 
     /**
      * Persists the trainable parameters of this layer (e.g. weights and biases).

@@ -24,6 +24,7 @@ import net.jamu.matrix.MatrixF;
  */
 public class CrossEntropyLoss extends AbstractLoss {
 
+    /** Creates a cross-entropy loss; expects probabilities, not logits. */
     public CrossEntropyLoss() {
     }
 

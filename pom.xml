@@ -6,7 +6,7 @@
 
     <groupId>net.sourceforge.streamsupport</groupId>
     <artifactId>mlp</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -25,6 +25,13 @@
             <groupId>net.sourceforge.streamsupport</groupId>
             <artifactId>math-base</artifactId>
             <version>1.5.2</version>
+            <!-- keeps JMH's BenchmarkProcessor off the annotation processor path -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

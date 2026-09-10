@@ -74,6 +74,14 @@ public class ParallelBranches extends AbstractLayer {
      */
     private final int[] branchOutputRows;
 
+    /**
+     * Whether a branch needs its own copy of the shared input. Not the same
+     * question as {@link #mutatesInput()}: this layer never writes into its own
+     * argument, it only has to keep one branch from writing into what the other
+     * branches still have to read.
+     */
+    private final boolean copyInput;
+
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -97,6 +105,13 @@ public class ParallelBranches extends AbstractLayer {
     public ParallelBranches(List<List<Layer>> branches) {
         this.branches = new ArrayList<>(branches);
         this.branchOutputRows = new int[branches.size()];
+        boolean mutates = false;
+        for (List<Layer> branch : this.branches) {
+            for (Layer layer : branch) {
+                mutates |= layer.mutatesInput();
+            }
+        }
+        this.copyInput = mutates;
     }
 
     // -------------------------------------------------------------------------
@@ -148,8 +163,8 @@ public class ParallelBranches extends AbstractLayer {
         for (int b = 0; b < n; b++) {
             // Give every branch its own copy of the input so that in-place
             // operations (e.g. Dropout) in one branch do not corrupt the
-            // others.
-            MatrixF x = copyOf(input);
+            // others. Not needed when no branch layer writes into its input.
+            MatrixF x = copyInput ? copyOf(input) : input;
             for (Layer layer : branches.get(b)) {
                 x = layer.forward(x);
             }
@@ -191,8 +206,9 @@ public class ParallelBranches extends AbstractLayer {
             }
             // Accumulate (chain rule: same input -> additive gradient terms).
             if (summedInputGrads == null) {
-                // copy: the accumulator is mutated below, and a branch may still
-                // hold a reference to the matrix it returned
+                // Unconditional, and not covered by mutatesGradients(): the property
+                // here is that a branch may still hold a reference to the matrix it
+                // returned, which addInplace below would overwrite.
                 summedInputGrads = g.copy();
             } else {
                 summedInputGrads.addInplace(1.0f, g);

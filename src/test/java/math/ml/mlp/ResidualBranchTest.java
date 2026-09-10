@@ -37,6 +37,35 @@ class ResidualBranchTest {
     }
 
     @Test
+    void backwardMatchesNumericalInputGradientWithoutAnActivation() {
+        // the branch above contains a layer that may mutate, this one does not, so
+        // the two exercise the copied and the uncopied path through the same code
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb2"), new BatchNorm(6));
+        assertInputGradient(layer, input(6, 5, 31L), input(6, 5, 32L), 3e-2);
+    }
+
+    @Test
+    void aMutatingBranchLayerCannotReachTheIdentityPath() {
+        ResidualBranch layer = new ResidualBranch(new MutatingProbe(4, 3, 1.0f));
+        layer.setMode(NetworkMode.TRAIN);
+        MatrixF x = input(4, 3, 33L);
+        MatrixF out = layer.forward(x.copy());
+        for (int c = 0; c < x.numColumns(); ++c) {
+            for (int r = 0; r < x.numRows(); ++r) {
+                assertEquals(x.getUnsafe(r, c) + 1.0f, out.getUnsafe(r, c), 1e-5f);
+            }
+        }
+
+        MatrixF grads = input(4, 3, 34L);
+        MatrixF inputGrads = layer.backward(grads.copy(), 0.0f);
+        for (int c = 0; c < grads.numColumns(); ++c) {
+            for (int r = 0; r < grads.numRows(); ++r) {
+                assertEquals(grads.getUnsafe(r, c), inputGrads.getUnsafe(r, c), 1e-6f);
+            }
+        }
+    }
+
+    @Test
     void forwardAddsTheIdentityShortcut() {
         // an empty branch makes F(x) = x, so the output must be exactly 2x
         ResidualBranch layer = new ResidualBranch();

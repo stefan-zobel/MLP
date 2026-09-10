@@ -45,7 +45,24 @@ public class Sigmoid extends Activation {
         return s * (1.0f - s);
     }
 
+    /** Creates a sigmoid layer. */
     public Sigmoid() {
         super(Sigmoid::sigmoid, Sigmoid::dsigmoid_dx);
+    }
+
+    @Override
+    void applyForward(float[] in, float[] out, int from, int to) {
+        for (int i = from; i < to; ++i) {
+            out[i] = sigmoid(in[i]);
+        }
+    }
+
+    @Override
+    void applyBackward(float[] preAct, float[] grads, float[] out, int from, int to) {
+        // recomputes the exponential rather than caching the forward output: the next
+        // layer may overwrite that output, and Gelu could not use it at all
+        for (int i = from; i < to; ++i) {
+            out[i] = grads[i] * dsigmoid_dx(preAct[i]);
+        }
     }
 }

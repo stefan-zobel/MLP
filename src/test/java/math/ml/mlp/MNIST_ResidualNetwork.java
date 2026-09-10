@@ -15,7 +15,8 @@
  */
 package math.ml.mlp;
 
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
+import java.util.SplittableRandom;
 
 import math.cern.Arithmetic;
 import math.ml.loader.MNIST;
@@ -118,6 +119,11 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
 
     public static void main(String[] args) {
 
+        // pass this seed back as the first argument to repeat a run exactly
+        long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        System.out.println("seed: " + baseSeed);
+        SplittableRandom seeds = new SplittableRandom(baseSeed);
+
         MNIST_ResidualNetwork net = new MNIST_ResidualNetwork();
 
         // --- Loss -----------------------------------------------------------
@@ -126,21 +132,21 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
 
         // --- Layer 1: linear + BN + ReLU + Dropout --------------------------
-        net.add(new Hidden(INPUT_SIZE, 256, "l1", false, true));
+        net.add(new Hidden(INPUT_SIZE, 256, "l1", false, true, seeds.nextLong()));
         net.add(new BatchNorm(256, "bn1", false, true));   // <- BatchNorm stabilizes training
         net.add(new Relu());
-        net.add(new Dropout(0.15f));           // <- fixed Dropout
+        net.add(new Dropout(0.15f, seeds.nextLong()));           // <- fixed Dropout
 
         // --- Layer 2: residual block (skip connection) ----------------------
         net.add(new ResidualBranch(            // <- ResidualBranch
-                new Hidden(256, 256, "res1", false, true),
+                new Hidden(256, 256, "res1", false, true, seeds.nextLong()),
                 new BatchNorm(256, "bn2", false, true),
                 new Relu()
         ));
-        net.add(new Dropout(0.10f));
+        net.add(new Dropout(0.10f, seeds.nextLong()));
 
         // --- Output layer ---------------------------------------------------
-        net.add(new Hidden(256, NUM_LABELS, "out", false, true));
+        net.add(new Hidden(256, NUM_LABELS, "out", false, true, seeds.nextLong()));
         net.add(loss);
 
         // -----------------------------------------------------------------------
@@ -148,7 +154,8 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         // -----------------------------------------------------------------------
         final float lr = 0.05f;
 
-        long seed = ThreadLocalRandom.current().nextLong();
+        // both with the same seed so images and labels stay aligned
+        long seed = seeds.nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
@@ -191,7 +198,7 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
             }
 
             // reshuffle between epochs
-            seed = ThreadLocalRandom.current().nextLong();
+            seed = seeds.nextLong();
             Statistics.shuffleColumnsInplace(IMAGES, seed);
             Statistics.shuffleColumnsInplace(EXPECT, seed);
         }

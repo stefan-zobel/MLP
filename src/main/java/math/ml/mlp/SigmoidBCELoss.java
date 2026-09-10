@@ -30,6 +30,10 @@ public class SigmoidBCELoss extends AbstractLoss {
 
     private MatrixF gradients;
 
+    /** Creates a fused sigmoid and binary cross-entropy loss; expects logits. */
+    public SigmoidBCELoss() {
+    }
+
     /** Expects logits, not probabilities: the sigmoid is applied here. */
     @Override
     public MatrixF forward(MatrixF logits) {

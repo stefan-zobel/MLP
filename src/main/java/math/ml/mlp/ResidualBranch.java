@@ -75,6 +75,14 @@ public class ResidualBranch extends AbstractLayer {
 
     private final List<Layer> branch;
 
+    /**
+     * Whether the branch needs a private copy of the shared matrix. Not the same
+     * question as {@link #mutatesInput()}: this layer never writes into its own
+     * arguments, it only has to keep a branch layer from doing so.
+     */
+    private final boolean copyInput;
+    private final boolean copyGradients;
+
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -86,7 +94,7 @@ public class ResidualBranch extends AbstractLayer {
      * @param layers the branch transformation F(x)
      */
     public ResidualBranch(Layer... layers) {
-        this.branch = new ArrayList<>(Arrays.asList(layers));
+        this(Arrays.asList(layers));
     }
 
     /**
@@ -96,6 +104,14 @@ public class ResidualBranch extends AbstractLayer {
      */
     public ResidualBranch(List<Layer> layers) {
         this.branch = new ArrayList<>(layers);
+        boolean input = false;
+        boolean gradients = false;
+        for (Layer layer : branch) {
+            input |= layer.mutatesInput();
+            gradients |= layer.mutatesGradients();
+        }
+        this.copyInput = input;
+        this.copyGradients = gradients;
     }
 
     // -------------------------------------------------------------------------
@@ -138,8 +154,9 @@ public class ResidualBranch extends AbstractLayer {
     @Override
     public MatrixF forward(MatrixF input) {
         // Pass a defensive copy into the branch so that in-place ops (e.g.
-        // Dropout) cannot corrupt the identity path.
-        MatrixF branchOut = copyOf(input);
+        // Dropout) cannot corrupt the identity path. A branch of layers that all
+        // declare they leave their input alone does not need one.
+        MatrixF branchOut = copyInput ? copyOf(input) : input;
         for (Layer layer : branch) {
             branchOut = layer.forward(branchOut);
         }
@@ -172,7 +189,7 @@ public class ResidualBranch extends AbstractLayer {
         // Pass a defensive copy to the branch backward: Dropout.backward()
         // modifies its argument in-place, which would corrupt the identity
         // gradient if we passed the original grads reference.
-        MatrixF branchGrads = copyOf(grads);
+        MatrixF branchGrads = copyGradients ? copyOf(grads) : grads;
         ListIterator<Layer> it = branch.listIterator(branch.size());
         while (it.hasPrevious()) {
             branchGrads = it.previous().backward(branchGrads, learningRate);

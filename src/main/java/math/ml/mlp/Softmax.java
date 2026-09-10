@@ -18,10 +18,12 @@ package math.ml.mlp;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
+/** Turns each column of logits into a probability distribution. */
 public final class Softmax extends AbstractLayer {
 
     private MatrixF output;
 
+    /** Creates a softmax layer. */
     public Softmax() {
     }
 

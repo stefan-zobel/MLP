@@ -50,6 +50,59 @@ final class MatrixOps {
     }
 
     /**
+     * Adds {@code v[0, c]} to every element of column {@code c}, the row-vector
+     * counterpart of {@link MatrixF#addBroadcastedVectorInplace(MatrixF)}, which
+     * broadcasts column vectors only.
+     *
+     * @param a the matrix to shift per sample, modified in place
+     * @param v a row vector with one entry per column of {@code a}
+     * @return {@code a}
+     */
+    static MatrixF addColumnsInplace(MatrixF a, MatrixF v) {
+        int cols = checkRowVector(a, v);
+        int rows = a.numRows();
+        float[] x = a.getArrayUnsafe();
+        float[] shift = v.getArrayUnsafe();
+        for (int c = 0, off = 0; c < cols; ++c, off += rows) {
+            float s = shift[c];
+            for (int r = 0; r < rows; ++r) {
+                x[off + r] += s;
+            }
+        }
+        return a;
+    }
+
+    /**
+     * Multiplies every element of column {@code c} by {@code v[0, c]}.
+     *
+     * @param a the matrix to scale per sample, modified in place
+     * @param v a row vector with one entry per column of {@code a}
+     * @return {@code a}
+     */
+    static MatrixF mulColumnsInplace(MatrixF a, MatrixF v) {
+        int cols = checkRowVector(a, v);
+        int rows = a.numRows();
+        float[] x = a.getArrayUnsafe();
+        float[] scale = v.getArrayUnsafe();
+        for (int c = 0, off = 0; c < cols; ++c, off += rows) {
+            float s = scale[c];
+            for (int r = 0; r < rows; ++r) {
+                x[off + r] *= s;
+            }
+        }
+        return a;
+    }
+
+    private static int checkRowVector(MatrixF a, MatrixF v) {
+        int cols = a.numColumns();
+        if (v.numRows() != 1 || v.numColumns() != cols) {
+            throw new IllegalArgumentException(
+                    "expected a 1 x " + cols + " row vector, got " + v.numRows() + " x " + v.numColumns());
+        }
+        return cols;
+    }
+
+    /**
      * Divides {@code a} by {@code b} element-wise.
      *
      * @param a the dividend, modified in place

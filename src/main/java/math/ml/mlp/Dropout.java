@@ -15,6 +15,9 @@
  */
 package math.ml.mlp;
 
+import java.util.SplittableRandom;
+import java.util.concurrent.ThreadLocalRandom;
+
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -33,9 +36,40 @@ public class Dropout extends AbstractLayer {
      */
     private MatrixF mask;
 
+    /** Owned by this layer, so two Dropout layers never interfere. */
+    private final SplittableRandom rng;
+
+    /**
+     * Creates a Dropout layer with an unseeded mask sequence.
+     *
+     * @param dropoutRate fraction of the activations to zero out
+     */
     public Dropout(float dropoutRate) {
+        this(dropoutRate, ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * A fresh mask is drawn per forward pass, so {@code seed} fixes the whole
+     * sequence of masks. INFER mode and rate 0 draw nothing.
+     *
+     * @param dropoutRate fraction of the activations to zero out
+     * @param seed        seed for the mask sequence
+     */
+    public Dropout(float dropoutRate, long seed) {
         this.dropoutRate = dropoutRate;
         this.scalingFactor = 1.0f / (1.0f - dropoutRate);
+        this.rng = new SplittableRandom(seed);
+    }
+
+    /** Answers from the rate, not from the mode, so it is stable before training starts. */
+    @Override
+    public boolean mutatesInput() {
+        return dropoutRate > 0.0f;
+    }
+
+    @Override
+    public boolean mutatesGradients() {
+        return dropoutRate > 0.0f;
     }
 
     // input: j x m, modified in place
@@ -44,11 +78,18 @@ public class Dropout extends AbstractLayer {
         if (mode == NetworkMode.INFER || dropoutRate <= 0.0f) {
             return input;
         }
-        float rate = dropoutRate;
-        float scale = scalingFactor;
-        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f)
-                .mapInplace(u -> u < rate ? 0.0f : scale);
-        return input.hadamard(mask, input);
+        // One pass instead of three. The draw, the threshold and the masking all walk
+        // the same j x m elements, and going through an FFunction to threshold is what
+        // puts this layer on the shared, megamorphic map call site.
+        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f, rng.nextLong());
+        float[] m = mask.getArrayUnsafe();
+        float[] x = input.getArrayUnsafe();
+        for (int i = 0; i < m.length; ++i) {
+            float factor = m[i] < dropoutRate ? 0.0f : scalingFactor;
+            m[i] = factor;
+            x[i] *= factor;
+        }
+        return input;
     }
 
     @Override
