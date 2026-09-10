@@ -15,7 +15,8 @@
  */
 package math.ml.mlp;
 
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
+import java.util.SplittableRandom;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -40,8 +41,8 @@ public class RandomByRoteNetwork extends AbstractNetwork {
     private static final int BATCH_SIZE = 200;
     // 10 different labels, randomly assigned
     static final MatrixF EXPECT = Matrices.createF(NUM_LABELS, BATCH_SIZE);
-    static {
-        ThreadLocalRandom rng = ThreadLocalRandom.current();
+
+    private static void assignRandomLabels(SplittableRandom rng) {
         for (int i = 0; i < BATCH_SIZE; ++i) {
             // attach a random label in [0..9]
             EXPECT.set(rng.nextInt(NUM_LABELS), i, 1.0f);
@@ -49,29 +50,35 @@ public class RandomByRoteNetwork extends AbstractNetwork {
     }
 
     public static void main(String[] args) {
+        // pass this seed back as the first argument to repeat a run exactly
+        long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        System.out.println("seed: " + baseSeed);
+        SplittableRandom seeds = new SplittableRandom(baseSeed);
+        assignRandomLabels(seeds);
+
         RandomByRoteNetwork net = new RandomByRoteNetwork();
         CrossEntropyLoss loss = new CrossEntropyLoss();
         loss.registerLossCallback(net::onLossComputationCompleted);
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
 
-        net.add(new Hidden(INPUT_SIZE, 1024, "1"));
+        net.add(new Hidden(INPUT_SIZE, 1024, "1", seeds.nextLong()));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 1024, "2"));
+        net.add(new Hidden(1024, 1024, "2", seeds.nextLong()));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 1024, "3"));
+        net.add(new Hidden(1024, 1024, "3", seeds.nextLong()));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 1024, "4"));
+        net.add(new Hidden(1024, 1024, "4", seeds.nextLong()));
         net.add(new Gelu()); // 1024
-        net.add(new Hidden(1024, 512, "5"));
+        net.add(new Hidden(1024, 512, "5", seeds.nextLong()));
         net.add(new Gelu()); // 512
-        net.add(new Hidden(512, 256, "6"));
+        net.add(new Hidden(512, 256, "6", seeds.nextLong()));
         net.add(new Gelu()); // 256
-        net.add(new Hidden(256, NUM_LABELS, "7"));
+        net.add(new Hidden(256, NUM_LABELS, "7", seeds.nextLong()));
         net.add(new Gelu()); // 10
         net.add(new Softmax());
         net.add(loss);
 
-        MatrixF input = Matrices.randomUniformF(INPUT_SIZE, BATCH_SIZE, -1.0f, 1.0f);
+        MatrixF input = Matrices.randomUniformF(INPUT_SIZE, BATCH_SIZE, -1.0f, 1.0f, seeds.nextLong());
         input = Statistics.zscoreColumnsInplace(input);
 
         final float learningRate = 0.008f;

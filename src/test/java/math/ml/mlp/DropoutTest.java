@@ -17,6 +17,7 @@ package math.ml.mlp;
 
 import static math.ml.mlp.GradientCheck.input;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,7 +27,7 @@ import org.junit.jupiter.api.Test;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
-/** The mask is drawn from an unseeded generator, so these are statistical bounds. */
+/** The tests on the seedless constructor draw an unseeded mask, so they assert statistical bounds. */
 class DropoutTest {
 
     @Test
@@ -129,6 +130,47 @@ class DropoutTest {
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(4, 3, 63L));
         assertNull(layer.backward(input(4, 3, 64L), 0.1f));
+    }
+
+    @Test
+    void theSameSeedProducesTheSameSequenceOfMasks() {
+        Dropout a = new Dropout(0.4f, 7L);
+        Dropout b = new Dropout(0.4f, 7L);
+        a.setMode(NetworkMode.TRAIN);
+        b.setMode(NetworkMode.TRAIN);
+
+        MatrixF previous = null;
+        for (int pass = 0; pass < 4; ++pass) {
+            // forward() returns its argument masked, so this is the mask itself
+            MatrixF fromA = a.forward(ones(12, 6));
+            MatrixF fromB = b.forward(ones(12, 6));
+            assertFalse(differs(fromA, fromB), "the two layers diverged in pass " + pass);
+            if (previous != null) {
+                // the seed must fix the sequence, not hand out one mask forever
+                assertTrue(differs(previous, fromA), "pass " + pass + " repeated the previous mask");
+            }
+            previous = fromA.copy();
+        }
+    }
+
+    @Test
+    void aDifferentSeedProducesADifferentMask() {
+        Dropout a = new Dropout(0.4f, 7L);
+        Dropout b = new Dropout(0.4f, 8L);
+        a.setMode(NetworkMode.TRAIN);
+        b.setMode(NetworkMode.TRAIN);
+        assertTrue(differs(a.forward(ones(12, 6)), b.forward(ones(12, 6))));
+    }
+
+    private static boolean differs(MatrixF a, MatrixF b) {
+        for (int c = 0; c < a.numColumns(); ++c) {
+            for (int r = 0; r < a.numRows(); ++r) {
+                if (a.getUnsafe(r, c) != b.getUnsafe(r, c)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static MatrixF ones(int rows, int cols) {

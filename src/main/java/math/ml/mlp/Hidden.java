@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.concurrent.ThreadLocalRandom;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -47,10 +48,38 @@ public class Hidden extends AbstractLayer {
     protected final boolean storeWeightsAndBiases;
 
     public Hidden(int in, int out, String name) {
-        this(in, out, name, false, false);
+        this(in, out, name, false, false, ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * Creates a layer whose weight initialization is reproducible.
+     *
+     * @param in   number of input features
+     * @param out  number of output features
+     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param seed seed for the Glorot draw
+     */
+    public Hidden(int in, int out, String name, long seed) {
+        this(in, out, name, false, false, seed);
     }
 
     public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases) {
+        this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * The overloads without a {@code seed} draw one, so a run is reproducible only
+     * if the seed is passed in.
+     *
+     * @param in                     number of input features
+     * @param out                    number of output features
+     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
+     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param seed                   seed for the Glorot draw, unused when the parameters are loaded
+     */
+    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
+            long seed) {
         this.name = name;
         this.storeWeightsAndBiases = storeWeightsAndBiases;
         int i = in;
@@ -61,7 +90,7 @@ public class Hidden extends AbstractLayer {
         } else {
             // Glorot uniform initialization
             float bound = (float) Math.sqrt(6.0 / (i + j));
-            weights = Matrices.randomUniformF(j, i, -bound, bound);
+            weights = Matrices.randomUniformF(j, i, -bound, bound, seed);
             biases = Matrices.createF(j, 1);
         }
     }

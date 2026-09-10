@@ -15,8 +15,9 @@
  */
 package math.ml.mlp;
 
+import java.security.SecureRandom;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.SplittableRandom;
 
 import math.cern.Arithmetic;
 import math.ml.loader.MNIST;
@@ -114,6 +115,11 @@ public class MNIST_VAE extends AbstractNetwork {
 
     public static void main(String[] args) {
 
+        // pass this seed back as the first argument to repeat a run exactly
+        long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        System.out.println("seed: " + baseSeed);
+        SplittableRandom seeds = new SplittableRandom(baseSeed);
+
         MNIST_VAE net = new MNIST_VAE();
 
         // --- Loss ---------------------------------------------------------
@@ -121,30 +127,30 @@ public class MNIST_VAE extends AbstractNetwork {
         bce.registerLossCallback(net::onLossComputationCompleted);
 
         // --- Encoder ------------------------------------------------------
-        net.add(new Hidden(INPUT_DIM, 256, "enc1"));
+        net.add(new Hidden(INPUT_DIM, 256, "enc1", seeds.nextLong()));
         net.add(new LayerNorm(256));
         net.add(new Relu());
-        net.add(new Hidden(256, 128, "enc2"));
+        net.add(new Hidden(256, 128, "enc2", seeds.nextLong()));
         net.add(new LayerNorm(128));
         net.add(new Relu());
 
         // --- Split: mu and log sigma^2 heads ------------------------------
         net.add(new ParallelBranches(
-                List.of(new Hidden(128, LATENT_DIM, "mu")),      // rows [0..LATENT_DIM-1]
-                List.of(new Hidden(128, LATENT_DIM, "logvar"))   // rows [LATENT_DIM..2*LATENT_DIM-1]
+                List.of(new Hidden(128, LATENT_DIM, "mu", seeds.nextLong())),     // rows [0..LATENT_DIM-1]
+                List.of(new Hidden(128, LATENT_DIM, "logvar", seeds.nextLong()))  // rows [LATENT_DIM..2*LATENT_DIM-1]
         ));
 
         // --- Reparameterization + KL gradient (lambda = 1.0) -------------
-        net.add(new VAEReparamLayer(LATENT_DIM));
+        net.add(new VAEReparamLayer(LATENT_DIM, 1.0f, seeds.nextLong()));
 
         // --- Decoder ------------------------------------------------------
-        net.add(new Hidden(LATENT_DIM, 128, "dec1"));
+        net.add(new Hidden(LATENT_DIM, 128, "dec1", seeds.nextLong()));
         net.add(new LayerNorm(128));
         net.add(new Relu());
-        net.add(new Hidden(128, 256, "dec2"));
+        net.add(new Hidden(128, 256, "dec2", seeds.nextLong()));
         net.add(new LayerNorm(256));
         net.add(new Relu());
-        net.add(new Hidden(256, INPUT_DIM, "dec3"));
+        net.add(new Hidden(256, INPUT_DIM, "dec3", seeds.nextLong()));
 
         // --- Reconstruction loss (targets = inputs) -----------------------
         net.add(bce);
@@ -156,7 +162,7 @@ public class MNIST_VAE extends AbstractNetwork {
         // test images drops from about 0.178 to 0.138
         final float lr = 0.010f;
 
-        long seed = ThreadLocalRandom.current().nextLong();
+        long seed = seeds.nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         // TARGETS == IMAGES, so it is already shuffled in sync.
 
@@ -175,7 +181,7 @@ public class MNIST_VAE extends AbstractNetwork {
             ++epoch;
 
             // reshuffle between epochs
-            seed = ThreadLocalRandom.current().nextLong();
+            seed = seeds.nextLong();
             Statistics.shuffleColumnsInplace(IMAGES, seed);
         }
 

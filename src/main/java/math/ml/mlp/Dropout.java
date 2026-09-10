@@ -15,6 +15,9 @@
  */
 package math.ml.mlp;
 
+import java.util.SplittableRandom;
+import java.util.concurrent.ThreadLocalRandom;
+
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -33,9 +36,24 @@ public class Dropout extends AbstractLayer {
      */
     private MatrixF mask;
 
+    /** Owned by this layer, so two Dropout layers never interfere. */
+    private final SplittableRandom rng;
+
     public Dropout(float dropoutRate) {
+        this(dropoutRate, ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * A fresh mask is drawn per forward pass, so {@code seed} fixes the whole
+     * sequence of masks. INFER mode and rate 0 draw nothing.
+     *
+     * @param dropoutRate fraction of the activations to zero out
+     * @param seed        seed for the mask sequence
+     */
+    public Dropout(float dropoutRate, long seed) {
         this.dropoutRate = dropoutRate;
         this.scalingFactor = 1.0f / (1.0f - dropoutRate);
+        this.rng = new SplittableRandom(seed);
     }
 
     // input: j x m, modified in place
@@ -46,7 +64,7 @@ public class Dropout extends AbstractLayer {
         }
         float rate = dropoutRate;
         float scale = scalingFactor;
-        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f)
+        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f, rng.nextLong())
                 .mapInplace(u -> u < rate ? 0.0f : scale);
         return input.hadamard(mask, input);
     }

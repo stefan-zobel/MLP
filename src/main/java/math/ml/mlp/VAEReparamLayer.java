@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.util.SplittableRandom;
+import java.util.concurrent.ThreadLocalRandom;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -83,6 +85,9 @@ public class VAEReparamLayer extends AbstractLayer {
     private MatrixF epsilon; // eps ~ N(0,I) : latentDim x m
     private MatrixF sigma;   // sigma = exp(logVar/2) : latentDim x m
 
+    /** Owned by this layer; epsilon is drawn from it once per forward pass. */
+    private final SplittableRandom rng;
+
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -103,8 +108,21 @@ public class VAEReparamLayer extends AbstractLayer {
      * @param klWeight  weight &lambda; applied to the KL-divergence gradient term
      */
     public VAEReparamLayer(int latentDim, float klWeight) {
+        this(latentDim, klWeight, ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * Creates a {@code VAEReparamLayer} whose sampling is reproducible. A fresh
+     * &epsilon; is drawn per forward pass, so {@code seed} fixes the whole sequence.
+     *
+     * @param latentDim dimensionality of the latent space
+     * @param klWeight  weight &lambda; applied to the KL-divergence gradient term
+     * @param seed      seed for the &epsilon; draws; INFER mode draws nothing
+     */
+    public VAEReparamLayer(int latentDim, float klWeight, long seed) {
         this.latentDim = latentDim;
         this.klWeight = klWeight;
+        this.rng = new SplittableRandom(seed);
     }
 
     // -------------------------------------------------------------------------
@@ -133,7 +151,7 @@ public class VAEReparamLayer extends AbstractLayer {
 
         logVar = input.selectSubmatrix(latentDim, 0, 2 * latentDim - 1, cols - 1);
         sigma = logVar.map(lv -> (float) Math.exp(0.5 * lv));
-        epsilon = Matrices.randomNormalF(latentDim, cols);
+        epsilon = Matrices.randomNormalF(latentDim, cols, rng.nextLong());
         return mu.plus(epsilon.hadamard(sigma));
     }
 
