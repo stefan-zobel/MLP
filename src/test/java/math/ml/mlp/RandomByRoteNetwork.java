@@ -34,10 +34,6 @@ public class RandomByRoteNetwork extends AbstractNetwork {
         }
     }
 
-    public MatrixF getExpectedBatchResults(int batchNumber) {
-        return EXPECT;
-    }
-
     private static boolean stop = false;
     private static final int INPUT_SIZE = 28 * 28; // 784
     private static final int NUM_LABELS = 10;
@@ -57,7 +53,6 @@ public class RandomByRoteNetwork extends AbstractNetwork {
         CrossEntropyLoss loss = new CrossEntropyLoss();
         loss.registerLossCallback(net::onLossComputationCompleted);
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
-        loss.registerBatchExpectedValuesProvider(net::getExpectedBatchResults);
 
         net.add(new Hidden(INPUT_SIZE, 1024, "1"));
         net.add(new Gelu()); // 1024
@@ -82,7 +77,7 @@ public class RandomByRoteNetwork extends AbstractNetwork {
         final float learningRate = 0.008f;
 
         for (int i = 0; i < 10_000 && !stop; ++i) {
-            net.train(input, learningRate);
+            net.train(input, EXPECT, learningRate);
         }
 
         System.out.println("\nDone.");

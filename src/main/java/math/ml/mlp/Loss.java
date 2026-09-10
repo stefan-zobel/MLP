@@ -17,7 +17,6 @@ package math.ml.mlp;
 
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
-import java.util.function.IntFunction;
 
 import net.jamu.matrix.MatrixF;
 
@@ -27,11 +26,28 @@ public interface Loss extends Layer {
 
     void registerAccuracyCallback(DoubleConsumer callback);
 
-    void registerBatchExpectedValuesProvider(IntFunction<MatrixF> provider);
+    /**
+     * Supplies the target values for the next {@code forward()}. The caller
+     * passes inputs and targets together, so the two cannot drift apart.
+     *
+     * @param expected the target values for the batch about to be trained
+     */
+    void setExpectedValues(MatrixF expected);
 
     // by default backward() for a Loss function does nothing and shouldn't be
     // called
     default MatrixF backward(MatrixF unused1, float unused2) {
         return null;
+    }
+
+    /**
+     * Whether this loss also yields a usable prediction in
+     * {@link NetworkMode#INFER} mode, which the fused losses do because they
+     * apply the output activation themselves.
+     *
+     * @return {@code true} if this loss produces a prediction in INFER mode
+     */
+    default boolean producesPredictionInInferMode() {
+        return false;
     }
 }

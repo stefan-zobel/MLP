@@ -4,6 +4,7 @@
 /target/
 /src/test/java/test/
 /data/
+/checkpoints/
 /backup/
 /backup2/
 /upload/

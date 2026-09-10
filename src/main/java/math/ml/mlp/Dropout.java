@@ -15,45 +15,40 @@
  */
 package math.ml.mlp;
 
-import java.util.BitSet;
-
-import math.rng.XorShiftRot256StarStar;
+import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
+/**
+ * Inverted dropout: zeroes a random fraction of the activations during training
+ * and scales the survivors so that the expected activation is unchanged.
+ */
 public class Dropout extends AbstractLayer {
 
     private final float dropoutRate;
     private final float scalingFactor;
-    private BitSet mask = new BitSet(0);
+
+    /**
+     * Zero where a unit was dropped, {@code scalingFactor} elsewhere. Held
+     * between the passes because backward() has to mask exactly the same units.
+     */
+    private MatrixF mask;
 
     public Dropout(float dropoutRate) {
         this.dropoutRate = dropoutRate;
         this.scalingFactor = 1.0f / (1.0f - dropoutRate);
     }
 
-    // input: j x m
+    // input: j x m, modified in place
     @Override
     public MatrixF forward(MatrixF input) {
         if (mode == NetworkMode.INFER || dropoutRate <= 0.0f) {
             return input;
         }
-        int inputSize = input.numRows() * input.numColumns();
-        if (mask.size() != inputSize) {
-            mask = new BitSet(inputSize);
-        } else {
-            mask.clear();
-        }
-        for (int col = 0; col < input.numColumns(); ++col) {
-            for (int row = 0; row < input.numRows(); ++row) {
-                if (dropout()) {
-                    mask.set(col * row);
-                    input.setUnsafe(row, col, 0.0f);
-                } else {
-                    input.setUnsafe(row, col, scalingFactor * input.getUnsafe(row, col));
-                }
-            }
-        }
-        return input;
+        float rate = dropoutRate;
+        float scale = scalingFactor;
+        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f)
+                .mapInplace(u -> u < rate ? 0.0f : scale);
+        return input.hadamard(mask, input);
     }
 
     @Override
@@ -61,19 +56,9 @@ public class Dropout extends AbstractLayer {
         if (mode == NetworkMode.INFER) {
             return null;
         }
-        for (int col = 0; col < grads.numColumns(); ++col) {
-            for (int row = 0; row < grads.numRows(); ++row) {
-                if (mask.get(row * col)) {
-                    grads.setUnsafe(row, col, 0.0f);
-                } else {
-                    grads.setUnsafe(row, col, scalingFactor * grads.getUnsafe(row, col));
-                }
-            }
+        if (dropoutRate <= 0.0f) {
+            return grads;
         }
-        return grads;
-    }
-
-    private boolean dropout() {
-        return XorShiftRot256StarStar.getDefault().nextFloat() < dropoutRate;
+        return grads.hadamard(mask, grads);
     }
 }

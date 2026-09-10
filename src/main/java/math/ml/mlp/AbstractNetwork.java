@@ -29,9 +29,6 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     public AbstractNetwork() {
     }
 
-    // this NEEDS to be implemented for the Network TRAIN mode!
-    public abstract MatrixF getExpectedBatchResults(int batchNumber);
-
     @Override
     public Network add(Layer layer) {
         layers.add(layer);
@@ -39,12 +36,16 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     }
 
     @Override
-    public Network train(MatrixF input, float learningRate) {
-        if (layers.size() < 2 || !(layers.get(layers.size() - 1) instanceof Loss)) {
-            // training requires at least two layers and the last one must be a loss
-            // function
-            return null;
+    public Network train(MatrixF input, MatrixF expected, float learningRate) {
+        if (expected == null) {
+            throw new IllegalArgumentException("expected values must not be null");
         }
+        if (layers.size() < 2 || !(layers.get(layers.size() - 1) instanceof Loss lossLayer)) {
+            throw new IllegalStateException(
+                    "training needs at least two layers and the last one must be a Loss");
+        }
+        // hand the targets to the loss for exactly this batch
+        lossLayer.setExpectedValues(expected);
         for (Layer layer : layers) {
             layer.setMode(NetworkMode.TRAIN);
             input = layer.forward(input);
@@ -54,9 +55,10 @@ public abstract class AbstractNetwork implements TrainableNetwork {
         ListIterator<Layer> it = layers.listIterator(layers.size());
         while (it.hasPrevious()) {
             Layer layer = it.previous();
-            if (layer instanceof Loss && !(layer instanceof SoftmaxCrossEntropyLoss)) {
-                // a Loss returns the gradient from its forward() method, its backward() method
-                // does nothing
+            if (layer instanceof Loss loss && !loss.producesPredictionInInferMode()) {
+                // a plain Loss returns the gradient from its forward() method, its
+                // backward() method does nothing. A fused loss keeps the gradient and
+                // hands it back from backward(), so it stays in the chain.
                 continue;
             }
             // propagate the gradients backwards to the previous layer
@@ -70,23 +72,30 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     public MatrixF infer(MatrixF input) {
         for (Layer layer : layers) {
             layer.setMode(NetworkMode.INFER);
-            if (layer instanceof Loss && !(layer instanceof SoftmaxCrossEntropyLoss)) {
-                // a Loss would return the gradient from its forward() method which is not a
-                // prediction, also it may call callbacks which might not have a sensible
-                // implementation if we are doing inference only, so skip this.
-                // SoftmaxCrossEntropyLoss is an exception as it behaves like Softmax in INFER
-                // mode. We assume that a Loss, if there is any, is always the last layer
+            if (layer instanceof Loss loss && !loss.producesPredictionInInferMode()) {
+                // a plain Loss would return the gradient from its forward() method which is
+                // not a prediction, also it may call callbacks which might not have a
+                // sensible implementation if we are doing inference only, so skip this.
+                // A fused loss is an exception as it applies its output activation itself.
+                // We assume that a Loss, if there is any, is always the last layer
                 break;
             }
             input = layer.forward(input);
         }
-        for (Layer layer : layers) {
-            if (layer instanceof Hidden) {
-                ((Hidden) layer).storeWeights();
-                ((Hidden) layer).storeBiases();
-            }
-        }
         // this is the prediction of the last layer
         return input;
+    }
+
+    /**
+     * Persists the parameters of every layer that was constructed with storing
+     * enabled; layers without storable parameters do nothing.
+     *
+     * <p>Call this explicitly from the training loop, typically only when the
+     * validation score improved. Inference deliberately does not persist.
+     */
+    public void storeParameters() {
+        for (Layer layer : layers) {
+            layer.storeParameters();
+        }
     }
 }
