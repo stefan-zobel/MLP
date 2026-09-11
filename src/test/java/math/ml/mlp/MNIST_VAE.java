@@ -75,6 +75,8 @@ public class MNIST_VAE extends AbstractNetwork {
     private static final int LATENT_DIM    = 20;
     private static final int BATCH_SIZE    = 128;
     private static final int NUM_EPOCHS    = 50;
+    // 2000 rather than the whole test set, which is what the classifier examples use:
+    private static final int VAL_SIZE      = 2000;
     private static final float LOWER       = 0.0f;
     private static final float UPPER       = 1.0f;
 
@@ -168,6 +170,15 @@ public class MNIST_VAE extends AbstractNetwork {
         net.optimizer(new Adam(LearningRateSchedule.warmupThenCosine(totalSteps / 20, 1e-3f, totalSteps, 1e-5f),
                 0.0f));
 
+        // Both reconstruction figures below use the same metric in the same mode, so they
+        // may be compared with each other. The training loss may not be compared with
+        // either: it is accumulated in TRAIN mode, where the reparameterization actually
+        // samples and the KL gradient is in play. The held-in slice is taken here, before
+        // the first shuffle, and then stays fixed -- selectConsecutiveColumns copies, so
+        // the reshuffles below cannot reach it.
+        MatrixF heldIn = IMAGES.selectConsecutiveColumns(0, VAL_SIZE - 1);
+        MatrixF heldOut = TEST_IMAGES.selectConsecutiveColumns(0, VAL_SIZE - 1);
+
         long seed = seeds.nextLong();
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         // TARGETS == IMAGES, so it is already shuffled in sync.
@@ -181,9 +192,15 @@ public class MNIST_VAE extends AbstractNetwork {
             }
 
             double avgLoss = Arithmetic.round(epochLossSum / batchesInEpoch, 6);
-            System.out.println("epoch " + epoch + "  avg. BCE loss: " + avgLoss);
+            // reset before inferring: SigmoidBCELoss returns its probabilities before it
+            // computes any loss in INFER mode, so the two calls below cannot reach these
+            // accumulators -- resetting first means they could not even if that changed
             epochLossSum   = 0.0;
             batchesInEpoch = 0;
+            double heldInBCE = Arithmetic.round(net.reconstructionLoss(heldIn), 6);
+            double heldOutBCE = Arithmetic.round(net.reconstructionLoss(heldOut), 6);
+            System.out.println("epoch " + epoch + "  avg. training loss (per image): " + avgLoss
+                    + "   reconstruction BCE (per pixel): held-in " + heldInBCE + "   held-out " + heldOutBCE);
             ++epoch;
 
             // reshuffle between epochs
@@ -191,19 +208,17 @@ public class MNIST_VAE extends AbstractNetwork {
             Statistics.shuffleColumnsInplace(IMAGES, seed);
         }
 
-        // -----------------------------------------------------------------------
-        // Quick reconstruction check on first 10 test images
-        // -----------------------------------------------------------------------
-        System.out.println("\nReconstruction check (first 10 test images):");
-        MatrixF sample    = TEST_IMAGES.selectConsecutiveColumns(0, 9);
-        MatrixF recon     = net.infer(sample);
-        float   reconLoss = averageBCE(sample, recon);
-        System.out.printf("avg. reconstruction BCE loss: %.6f%n", reconLoss);
+        System.out.println("\nfinal held-out reconstruction BCE on " + VAL_SIZE + " test images: "
+                + Arithmetic.round(net.reconstructionLoss(heldOut), 6));
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private double reconstructionLoss(MatrixF images) {
+        return averageBCE(images, infer(images));
+    }
 
     private static float averageBCE(MatrixF target, MatrixF pred) {
         int rows = target.numRows();
