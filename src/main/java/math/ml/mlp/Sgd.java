@@ -91,7 +91,7 @@ public final class Sgd extends AbstractOptimizer {
                 // MatrixF.addInplace skips its loop at alpha zero, and -0.0f == 0.0f, so
                 // both zeros are a no-op there. Writing anyway would turn a -0.0f
                 // parameter into +0.0f and a non-finite gradient into a non-finite
-                // parameter, and GradientCheck relies on a zero rate changing nothing.
+                // parameter.
                 return;
             }
             for (int i = 0; i < v.length; ++i) {

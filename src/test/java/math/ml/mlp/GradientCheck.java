@@ -63,8 +63,8 @@ final class GradientCheck {
     /**
      * Asserts that the layer's input gradient matches central differences.
      *
-     * <p>Runs with a learning rate of zero so that no parameter moves between the
-     * analytic and the numerical pass.
+     * <p>No parameter moves between the analytic and the numerical pass: the layer
+     * only produces gradients and no optimizer is involved.
      */
     static void assertInputGradient(Layer layer, MatrixF x, MatrixF w, double tolerance) {
         layer.setMode(NetworkMode.TRAIN);
