@@ -31,7 +31,7 @@ import java.util.SplittableRandom;
  */
 public final class MNISTAugmenter {
 
-    private static final String TRAIN_IMAGES = "./data/mnist/train-images.idx3-ubyte";
+    static final String TRAIN_IMAGES = "./data/mnist/train-images.idx3-ubyte";
 
     private static final int IMAGE_MAGIC = 0x00000803;
 
@@ -45,10 +45,10 @@ public final class MNISTAugmenter {
     // alpha 44 at about 0.91. Difficulty follows the displacement almost alone -- 1.3 px
     // RMS for the first pair, 1.1 px for the second -- while sigma decides whether that
     // displacement wrinkles locally or moves whole regions, so the two sets cover both.
-    private static final double ELASTIC1_SIGMA = 4.0;
-    private static final double ELASTIC1_ALPHA = 34.0;
-    private static final double ELASTIC2_SIGMA = 6.0;
-    private static final double ELASTIC2_ALPHA = 44.0;
+    static final double ELASTIC1_SIGMA = 4.0;
+    static final double ELASTIC1_ALPHA = 34.0;
+    static final double ELASTIC2_SIGMA = 6.0;
+    static final double ELASTIC2_ALPHA = 44.0;
 
     /**
      * The sets this generator writes, in the order the seeds are drawn for them. New
@@ -232,13 +232,40 @@ public final class MNISTAugmenter {
         return k;
     }
 
+    /**
+     * Draws one affine distortion - a translation, a rotation and an isotropic scaling -
+     * and applies it. These are the parameters the stored affine sets were written with.
+     *
+     * @param image source image, row-major, {@code w * h} unsigned bytes
+     * @param w     image width in pixels
+     * @param h     image height in pixels
+     * @param rnd   source of the four parameters
+     * @return the distorted image, row-major, {@code w * h} unsigned bytes
+     */
     // the draw order fixes the contents of the affine sets and must not be rearranged
-    private static byte[] randomAffine(byte[] image, int w, int h, SplittableRandom rnd) {
+    public static byte[] randomAffine(byte[] image, int w, int h, SplittableRandom rnd) {
         double dx = rnd.nextDouble(-MAX_SHIFT, MAX_SHIFT);
         double dy = rnd.nextDouble(-MAX_SHIFT, MAX_SHIFT);
         double theta = rnd.nextDouble(-MAX_ANGLE, MAX_ANGLE);
         double scale = rnd.nextDouble(MIN_SCALE, MAX_SCALE);
         return warp(image, w, h, dx, dy, theta, scale);
+    }
+
+    /**
+     * Draws one of the two calibrated elastic distortions with equal probability and
+     * applies it.
+     *
+     * @param image source image, row-major, {@code w * h} unsigned bytes
+     * @param w     image width in pixels
+     * @param h     image height in pixels
+     * @param rnd   source of the choice and of the two displacement fields
+     * @return the distorted image, row-major, {@code w * h} unsigned bytes
+     */
+    public static byte[] randomElastic(byte[] image, int w, int h, SplittableRandom rnd) {
+        if (rnd.nextBoolean()) {
+            return elastic(image, w, h, ELASTIC1_SIGMA, ELASTIC1_ALPHA, rnd);
+        }
+        return elastic(image, w, h, ELASTIC2_SIGMA, ELASTIC2_ALPHA, rnd);
     }
 
     /**
@@ -303,7 +330,8 @@ public final class MNISTAugmenter {
         System.out.println("wrote " + source.count + " images to " + target.path);
     }
 
-    private static Images read(String path) throws IOException {
+    // package-private because MNISTAugmentedSet needs the raw bytes
+    static Images read(String path) throws IOException {
         try (DataInputStream in = MNIST.getDataInputStream(path)) {
             int count = in.readInt();
             int rows = in.readInt();
@@ -332,7 +360,7 @@ public final class MNISTAugmenter {
     }
 
     // the whole source set, row-major per image, unsigned bytes
-    private static final class Images {
+    static final class Images {
         final int count;
         final int w;
         final int h;

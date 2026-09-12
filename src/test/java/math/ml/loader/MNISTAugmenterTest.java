@@ -278,4 +278,62 @@ public class MNISTAugmenterTest {
                 () -> MNISTAugmenter.elastic(src, W, H, 0.0, 34.0, new SplittableRandom(7L)));
     }
 
+    private static byte[] elasticWith(byte[] src, long seed, double sigma, double alpha) {
+        SplittableRandom rnd = new SplittableRandom(seed);
+        // randomElastic spends one boolean on the choice before it distorts anything
+        rnd.nextBoolean();
+        return MNISTAugmenter.elastic(src, W, H, sigma, alpha, rnd);
+    }
+
+    @Test
+    public void randomAffineKeepsTheDigitOnTheGrid() {
+        // 8 pixels wide and centered: at scale 1.1, 12 degrees and 2 pixels of shift its
+        // farthest corner still lands well inside the frame, so nothing may be clipped away
+        byte[] src = centeredBlock(8, 200);
+        long expected = sum(src);
+        int moved = 0;
+        for (long seed = 0L; seed < 200L; ++seed) {
+            byte[] got = MNISTAugmenter.randomAffine(src, W, H, new SplittableRandom(seed));
+            long ink = sum(got);
+            assertTrue(ink > expected / 2L && ink < 2L * expected, "seed " + seed + " summed " + ink);
+            if (!Arrays.equals(src, got)) {
+                ++moved;
+            }
+        }
+        assertEquals(200, moved);
+    }
+
+    @Test
+    public void randomAffineIsReproducible() {
+        byte[] src = ramp();
+        assertArrayEquals(MNISTAugmenter.randomAffine(src, W, H, new SplittableRandom(7L)),
+                MNISTAugmenter.randomAffine(src, W, H, new SplittableRandom(7L)));
+    }
+
+    @Test
+    public void randomElasticIsReproducible() {
+        byte[] src = ramp();
+        assertArrayEquals(MNISTAugmenter.randomElastic(src, W, H, new SplittableRandom(7L)),
+                MNISTAugmenter.randomElastic(src, W, H, new SplittableRandom(7L)));
+    }
+
+    @Test
+    public void randomElasticUsesBothCalibrations() {
+        byte[] src = ramp();
+        int first = 0;
+        int second = 0;
+        for (long seed = 0L; seed < 40L; ++seed) {
+            byte[] got = MNISTAugmenter.randomElastic(src, W, H, new SplittableRandom(seed));
+            if (Arrays.equals(got,
+                    elasticWith(src, seed, MNISTAugmenter.ELASTIC1_SIGMA, MNISTAugmenter.ELASTIC1_ALPHA))) {
+                ++first;
+            } else if (Arrays.equals(got,
+                    elasticWith(src, seed, MNISTAugmenter.ELASTIC2_SIGMA, MNISTAugmenter.ELASTIC2_ALPHA))) {
+                ++second;
+            }
+        }
+        assertEquals(40, first + second, "every draw must be one of the two calibrations");
+        assertTrue(first > 0 && second > 0, "first " + first + ", second " + second);
+    }
+
 }
