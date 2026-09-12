@@ -75,7 +75,7 @@ public class MNIST_VAE extends AbstractNetwork {
     private static final int LATENT_DIM    = 20;
     private static final int BATCH_SIZE    = 128;
     private static final int NUM_EPOCHS    = 50;
-    // 2000 rather than the whole test set, which is what the classifier examples use:
+    // 2000 rather than the whole test set, which is what the classifier examples use
     private static final int VAL_SIZE      = 2000;
     private static final float LOWER       = 0.0f;
     private static final float UPPER       = 1.0f;
