@@ -25,8 +25,8 @@ import net.jamu.matrix.MatrixF;
 import net.jamu.matrix.Statistics;
 
 /**
- * The network of {@link MNIST_TrainingNetwork3} on all five training sets: the original,
- * the two shifted copies and the two affine ones.
+ * The network of {@link MNIST_TrainingNetwork3} on all seven training sets: the original,
+ * the two shifted copies, the two affine and the two elastic ones.
  */
 public class MNIST_TrainingNetwork4 extends AbstractNetwork {
 
@@ -48,19 +48,16 @@ public class MNIST_TrainingNetwork4 extends AbstractNetwork {
     private static final float LOWER = 0.0f;
     private static final float UPPER = 1.0f;
 
-    // 784 x 300_000: the training set, its left- and right-shifted copies, and the two
-    // affine ones. This needs more heap than the default -- the finished matrix alone is
-    // 941 MB, and appendMatrix allocates one per call, so the chain peaks higher still.
-    // Run with -Xmx6g.
-    private static final MatrixF IMAGES = Statistics.rescaleInplace(MNIST.getTrainingSetImages()
-            .appendMatrix(MNIST.getTrainingSetImagesLeft()).appendMatrix(MNIST.getTrainingSetImagesRight())
-            .appendMatrix(MNIST.getTrainingSetImagesAffine1()).appendMatrix(MNIST.getTrainingSetImagesAffine2()),
-            LOWER, UPPER);
+    private static final int NUM_SETS = 7;
 
-    // 10 x 300_000: every set is a per-image transform of the original, so the labels repeat
-    private static final MatrixF EXPECT = MNIST.getTrainingSetLabels().appendMatrix(MNIST.getTrainingSetLabels())
-            .appendMatrix(MNIST.getTrainingSetLabels()).appendMatrix(MNIST.getTrainingSetLabels())
-            .appendMatrix(MNIST.getTrainingSetLabels());
+    // 784 x 420_000: the training set, its left- and right-shifted copies, the two affine
+    // and the two elastic ones. Assembled into one preallocated matrix rather than by a
+    // chain of appendMatrix calls, which would hold the 360_000-column intermediate and
+    // the finished 1.32 GB matrix at the same time and overflow the default heap.
+    private static final MatrixF IMAGES = Statistics.rescaleInplace(trainingImages(), LOWER, UPPER);
+
+    // 10 x 420_000: every set is a per-image transform of the original, so the labels repeat
+    private static final MatrixF EXPECT = repeatedLabels();
 
     private static final MatrixF TEST_IMAGES = Statistics.rescaleInplace(MNIST.getTestSetImages(), LOWER, UPPER);
     private static final MatrixF TEST_EXPECT = MNIST.getTestSetLabels();
@@ -68,11 +65,14 @@ public class MNIST_TrainingNetwork4 extends AbstractNetwork {
     private static final int INPUT_SIZE = IMAGES.numRows();
     private static final int NUM_BATCHES_PER_EPOCH = IMAGES.numColumns() / BATCH_SIZE;
     // fixed, with no early break: the cosine decay needs a known horizon to reach its
-    // floor, and a run that stops early turns that horizon into a mere upper bound
-    private static final int NUM_EPOCHS = 40;
+    // floor, and a run that stops early turns that horizon into a mere upper bound.
+    // 28 of them are 58_800 steps, and past about 36_000 the result stops moving: measured
+    // on five sets, 0.9927 at 36_000 steps, 0.9929 at 42_000 and 0.9926 at 60_000. A longer
+    // run costs time and buys nothing measurable.
+    private static final int NUM_EPOCHS = 28;
     // tuned over six epochs on the 180_000-column variant that still had dropout: 0.9855 at
     // 3e-4, 0.9882 at 1e-3, 0.9885 at 3e-3, 0.9903 at 1e-2, 0.9904 at 2e-2, then 0.9894 at
-    // 3e-2 and above. Not retuned for the five sets and the 60_000 steps they bring; the
+    // 3e-2 and above. Not retuned for the seven sets and the 58_800 steps they bring; the
     // plateau was flat enough that the lower end of it stays the safer choice.
     private static final float PEAK_RATE = 1e-2f;
 
@@ -154,4 +154,36 @@ public class MNIST_TrainingNetwork4 extends AbstractNetwork {
         MatrixF predict = infer(TEST_IMAGES);
         return CategorialAccuracy.computeAccuracy(predict, TEST_EXPECT);
     }
+
+    // The sets are loaded one at a time and released as soon as they are copied, so only
+    // one source is ever live beside the destination.
+    private static MatrixF trainingImages() {
+        MatrixF first = MNIST.getTrainingSetImages();
+        MatrixF all = Matrices.createF(first.numRows(), NUM_SETS * first.numColumns());
+        int col = copyInto(all, first, 0);
+        col = copyInto(all, MNIST.getTrainingSetImagesLeft(), col);
+        col = copyInto(all, MNIST.getTrainingSetImagesRight(), col);
+        col = copyInto(all, MNIST.getTrainingSetImagesAffine1(), col);
+        col = copyInto(all, MNIST.getTrainingSetImagesAffine2(), col);
+        col = copyInto(all, MNIST.getTrainingSetImagesElastic1(), col);
+        copyInto(all, MNIST.getTrainingSetImagesElastic2(), col);
+        return all;
+    }
+
+    private static MatrixF repeatedLabels() {
+        MatrixF labels = MNIST.getTrainingSetLabels();
+        MatrixF all = Matrices.createF(labels.numRows(), NUM_SETS * labels.numColumns());
+        int col = 0;
+        for (int i = 0; i < NUM_SETS; ++i) {
+            col = copyInto(all, labels, col);
+        }
+        return all;
+    }
+
+    // copies one set into the block starting at startCol and returns the next free column
+    private static int copyInto(MatrixF all, MatrixF part, int startCol) {
+        all.setSubmatrixInplace(0, startCol, part, 0, 0, part.numRows() - 1, part.numColumns() - 1);
+        return startCol + part.numColumns();
+    }
+
 }
