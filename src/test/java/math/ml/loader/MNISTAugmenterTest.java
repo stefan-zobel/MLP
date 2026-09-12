@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
+import java.util.SplittableRandom;
 
 import org.junit.jupiter.api.Test;
 
@@ -176,4 +177,105 @@ public class MNISTAugmenterTest {
         byte[] src = ramp();
         assertThrows(IllegalArgumentException.class, () -> MNISTAugmenter.warp(src, W, H, 0.0, 0.0, 0.0, 0.0));
     }
+
+    private static double[] constantField(double value) {
+        double[] f = new double[W * H];
+        Arrays.fill(f, value);
+        return f;
+    }
+
+    private static double variance(double[] f) {
+        double mean = 0.0;
+        for (double v : f) {
+            mean += v;
+        }
+        mean /= f.length;
+        double s = 0.0;
+        for (double v : f) {
+            s += (v - mean) * (v - mean);
+        }
+        return s / f.length;
+    }
+
+    @Test
+    public void zeroFieldIsIdentity() {
+        byte[] src = ramp();
+        assertArrayEquals(src, MNISTAugmenter.warpField(src, W, H, constantField(0.0), constantField(0.0)));
+    }
+
+    @Test
+    public void constantFieldEqualsTheOppositeTranslation() {
+        // warp moves the image by dx, warpField says where each pixel reads from, so the
+        // two agree only with the sign flipped -- which is the point of the check
+        byte[] src = ramp();
+        byte[] viaField = MNISTAugmenter.warpField(src, W, H, constantField(0.75), constantField(-1.5));
+        byte[] viaWarp = MNISTAugmenter.warp(src, W, H, -0.75, 1.5, 0.0, 1.0);
+        assertArrayEquals(viaWarp, viaField);
+    }
+
+    @Test
+    public void fieldOffTheGridYieldsZero() {
+        byte[] dst = MNISTAugmenter.warpField(ramp(), W, H, constantField(100.0), constantField(0.0));
+        assertEquals(0L, sum(dst));
+    }
+
+    @Test
+    public void rejectsAMismatchedField() {
+        byte[] src = ramp();
+        assertThrows(IllegalArgumentException.class,
+                () -> MNISTAugmenter.warpField(src, W, H, new double[10], constantField(0.0)));
+    }
+
+    @Test
+    public void smoothingKeepsTheCentreAndDampensTheBorder() {
+        double[] f = constantField(1.0);
+        MNISTAugmenter.smooth(f, W, H, MNISTAugmenter.gaussianKernel(4.0));
+        // the kernel is normalized, so a constant field survives where it fits entirely
+        assertEquals(1.0, f[(H / 2) * W + W / 2], 1.0e-9);
+        // and is damped where it does not, because outside the grid counts as zero
+        assertTrue(f[0] < 0.5, "corner was " + f[0]);
+    }
+
+    @Test
+    public void aLargerSigmaSmoothsMore() {
+        double[] narrow = MNISTAugmenter.displacementField(W, H, MNISTAugmenter.gaussianKernel(3.0), 1.0,
+                new SplittableRandom(7L));
+        double[] wide = MNISTAugmenter.displacementField(W, H, MNISTAugmenter.gaussianKernel(8.0), 1.0,
+                new SplittableRandom(7L));
+        assertTrue(variance(wide) < variance(narrow),
+                "wide " + variance(wide) + " should be below narrow " + variance(narrow));
+    }
+
+    @Test
+    public void displacementScalesWithAlpha() {
+        double[] one = MNISTAugmenter.displacementField(W, H, MNISTAugmenter.gaussianKernel(4.0), 1.0,
+                new SplittableRandom(7L));
+        double[] ten = MNISTAugmenter.displacementField(W, H, MNISTAugmenter.gaussianKernel(4.0), 10.0,
+                new SplittableRandom(7L));
+        for (int i = 0; i < one.length; ++i) {
+            assertEquals(10.0 * one[i], ten[i], 1.0e-9);
+        }
+    }
+
+    @Test
+    public void elasticWithoutAmplitudeIsIdentity() {
+        byte[] src = ramp();
+        assertArrayEquals(src, MNISTAugmenter.elastic(src, W, H, 4.0, 0.0, new SplittableRandom(7L)));
+    }
+
+    @Test
+    public void elasticIsReproducible() {
+        byte[] src = ramp();
+        byte[] a = MNISTAugmenter.elastic(src, W, H, 4.0, 34.0, new SplittableRandom(7L));
+        byte[] b = MNISTAugmenter.elastic(src, W, H, 4.0, 34.0, new SplittableRandom(7L));
+        assertArrayEquals(a, b);
+    }
+
+    @Test
+    public void elasticRejectsANonPositiveSigma() {
+        byte[] src = ramp();
+        assertThrows(IllegalArgumentException.class,
+                () -> MNISTAugmenter.elastic(src, W, H, 0.0, 34.0, new SplittableRandom(7L)));
+    }
+
 }

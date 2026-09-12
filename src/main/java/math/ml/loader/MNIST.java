@@ -38,6 +38,8 @@ public final class MNIST {
     private static final String TRAIN_IMAGES_RIGHT = "./data/mnist/train-images-right.idx3-ubyte";
     private static final String TRAIN_IMAGES_AFFINE1 = "./data/mnist/train-images-affine1.idx3-ubyte";
     private static final String TRAIN_IMAGES_AFFINE2 = "./data/mnist/train-images-affine2.idx3-ubyte";
+    private static final String TRAIN_IMAGES_ELASTIC1 = "./data/mnist/train-images-elastic1.idx3-ubyte";
+    private static final String TRAIN_IMAGES_ELASTIC2 = "./data/mnist/train-images-elastic2.idx3-ubyte";
     private static final String TRAIN_LABELS = "./data/mnist/train-labels.idx1-ubyte";
     private static final String TEST_IMAGES = "./data/mnist/t10k-images.idx3-ubyte";
     private static final String TEST_LABELS = "./data/mnist/t10k-labels.idx1-ubyte";
@@ -110,6 +112,35 @@ public final class MNIST {
             throw new UncheckedIOException(e);
         }
     }
+
+    /**
+     * Loads the first elastically distorted copy of the training images into a
+     * {@code 784 x 60_000} matrix.
+     *
+     * @return MNIST training set images under a smoothed random displacement field
+     */
+    public static MatrixF getTrainingSetImagesElastic1() {
+        try {
+            return readImages(TRAIN_IMAGES_ELASTIC1);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Loads the second elastically distorted copy of the training images into a
+     * {@code 784 x 60_000} matrix.
+     *
+     * @return MNIST training set images under a smoothed random displacement field
+     */
+    public static MatrixF getTrainingSetImagesElastic2() {
+        try {
+            return readImages(TRAIN_IMAGES_ELASTIC2);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
 
 
     /**
