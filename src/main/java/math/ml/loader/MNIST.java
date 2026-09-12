@@ -15,13 +15,9 @@
  */
 package math.ml.loader;
 
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 
-import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 /**
@@ -30,8 +26,6 @@ import net.jamu.matrix.MatrixF;
 public final class MNIST {
 
     private static final int NUMBER_OF_DISTINCT_LABELS = 10;
-
-    private static final MatrixF[] ONE_HOT = new MatrixF[NUMBER_OF_DISTINCT_LABELS];
 
     private static final String TRAIN_IMAGES = "./data/mnist/train-images.idx3-ubyte";
     private static final String TRAIN_IMAGES_LEFT = "./data/mnist/train-images-left.idx3-ubyte";
@@ -183,52 +177,11 @@ public final class MNIST {
     }
 
     private static MatrixF readImages(String path) throws IOException {
-        try (DataInputStream ds = getDataInputStream(path)) {
-            int imageCount = ds.readInt();
-            int rowPixelCount = ds.readInt();
-            int colPixelCount = ds.readInt();
-            final int matrixRowCount = rowPixelCount * colPixelCount;
-            // we store each image in a column of the returned matrix
-            MatrixF images = Matrices.createF(matrixRowCount, imageCount);
-            // images in the LeCun files are stored in row-major, so we store them line by
-            // line into our column
-            for (int col = 0; col < imageCount; ++col) {
-                for (int row = 0; row < matrixRowCount; ++row) {
-                    images.set(row, col, ds.readUnsignedByte());
-                }
-            }
-            return images;
-        }
+        return Idx.readImages(path);
     }
 
     private static MatrixF readLabels(String path) throws IOException {
-        try (DataInputStream ds = getDataInputStream(path)) {
-            int labelCount = ds.readInt();
-            MatrixF labels = Matrices.createF(NUMBER_OF_DISTINCT_LABELS, labelCount);
-            for (int i = 0; i < labelCount; ++i) {
-                int label = ds.readUnsignedByte();
-                labels.setColumnInplace(i, ONE_HOT[label]);
-            }
-            return labels;
-        }
-    }
-
-    // package-private because MNISTAugmenter reads the same files
-    static DataInputStream getDataInputStream(String path) throws IOException {
-        DataInputStream ds = new DataInputStream(new BufferedInputStream(new FileInputStream(path)));
-        // throw away magic number
-        ds.readInt();
-        return ds;
-    }
-
-    // initialize ONE_HOT templates
-    static {
-        for (int i = 0; i < NUMBER_OF_DISTINCT_LABELS; ++i) {
-            // one hot column vector template
-            ONE_HOT[i] = Matrices.createF(NUMBER_OF_DISTINCT_LABELS, 1);
-            // row i is 1, all other rows are 0
-            ONE_HOT[i].set(i, 0, 1.0f);
-        }
+        return Idx.readLabels(path, NUMBER_OF_DISTINCT_LABELS);
     }
 
     private MNIST() {

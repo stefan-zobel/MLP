@@ -27,7 +27,7 @@ import net.jamu.matrix.MatrixF;
  * The training images with a distortion drawn anew for every image on every pass, as an
  * alternative to the stored augmented sets.
  */
-public final class MNISTAugmentedSet {
+public final class AugmentedSet implements PassSource {
 
     // The mix of the seven stored sets, as closely as the families allow: one part the
     // original, three parts affine and three parts elastic. The one pixel shifted sets get
@@ -35,7 +35,7 @@ public final class MNISTAugmentedSet {
     // already contains them.
     private static final int IDENTITY_WEIGHT = 1;
     private static final int AFFINE_WEIGHT = 3;
-    private static final int TOTAL_WEIGHT = 7;
+    private static final int ELASTIC_WEIGHT = 3;
 
     private static final float MAX_BYTE = 255.0f;
 
@@ -45,25 +45,62 @@ public final class MNISTAugmentedSet {
     private final int w;
     private final int h;
 
+    private final int identityWeight;
+    private final int affineWeight;
+    private final int totalWeight;
+
     private final MatrixF images;
     private final MatrixF labels;
 
     /**
-     * Reads the plain training images and labels; the distortions are drawn later, one per
-     * image and pass.
+     * Reads the plain MNIST training images and labels; the distortions are drawn later, one
+     * per image and pass.
      *
-     * @return the training set, ready to be distorted
+     * @return the MNIST training set, ready to be distorted
      */
-    public static MNISTAugmentedSet forTraining() {
+    public static AugmentedSet forMnistTraining() {
         try {
             MNISTAugmenter.Images src = MNISTAugmenter.read(MNISTAugmenter.TRAIN_IMAGES);
-            return new MNISTAugmentedSet(src.data, src.count, src.w, src.h, MNIST.getTrainingSetLabels());
+            return new AugmentedSet(src.data, src.count, src.w, src.h, MNIST.getTrainingSetLabels());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    MNISTAugmentedSet(byte[] source, int count, int w, int h, MatrixF labels) {
+    /**
+     * Reads the plain EMNIST training images and labels, already turned upright.
+     *
+     * @return the EMNIST training set, ready to be distorted
+     */
+    public static AugmentedSet forEmnistTraining() {
+        return forEmnistTraining(IDENTITY_WEIGHT, AFFINE_WEIGHT, ELASTIC_WEIGHT);
+    }
+
+    /**
+     * The EMNIST training set under a chosen mix of distortions; weights of {@code 1, 0, 0}
+     * leave every image alone and give an unaugmented set.
+     *
+     * @param identityWeight share of images that stay as they are
+     * @param affineWeight share of images under a random rotation, scaling and translation
+     * @param elasticWeight share of images under a smoothed random displacement field
+     * @return the EMNIST training set, ready to be distorted
+     */
+    public static AugmentedSet forEmnistTraining(int identityWeight, int affineWeight, int elasticWeight) {
+        try {
+            MNISTAugmenter.Images src = EMNIST.readTrainingImages();
+            return new AugmentedSet(src.data, src.count, src.w, src.h, EMNIST.getTrainingSetLabels(), identityWeight,
+                    affineWeight, elasticWeight);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    AugmentedSet(byte[] source, int count, int w, int h, MatrixF labels) {
+        this(source, count, w, h, labels, IDENTITY_WEIGHT, AFFINE_WEIGHT, ELASTIC_WEIGHT);
+    }
+
+    AugmentedSet(byte[] source, int count, int w, int h, MatrixF labels, int identityWeight, int affineWeight,
+            int elasticWeight) {
         if (source.length != count * w * h) {
             throw new IllegalArgumentException(
                     "source.length " + source.length + " != " + count + " * " + w + " * " + h);
@@ -71,11 +108,21 @@ public final class MNISTAugmentedSet {
         if (labels.numColumns() != count) {
             throw new IllegalArgumentException("got " + labels.numColumns() + " labels for " + count + " images");
         }
+        if (identityWeight < 0 || affineWeight < 0 || elasticWeight < 0) {
+            throw new IllegalArgumentException(
+                    "negative weight: " + identityWeight + ", " + affineWeight + ", " + elasticWeight);
+        }
+        if (identityWeight + affineWeight + elasticWeight <= 0) {
+            throw new IllegalArgumentException("all three weights are zero");
+        }
         this.source = source;
         this.sourceLabels = labels;
         this.count = count;
         this.w = w;
         this.h = h;
+        this.identityWeight = identityWeight;
+        this.affineWeight = affineWeight;
+        this.totalWeight = identityWeight + affineWeight + elasticWeight;
         this.images = Matrices.createF(w * h, count);
         this.labels = Matrices.createF(labels.numRows(), count);
     }
@@ -86,6 +133,7 @@ public final class MNISTAugmentedSet {
      *
      * @return the {@code w * h x count} image matrix
      */
+    @Override
     public MatrixF images() {
         return images;
     }
@@ -93,8 +141,9 @@ public final class MNISTAugmentedSet {
     /**
      * The labels belonging to {@link #images}, column by column.
      *
-     * @return the {@code 10 x count} label matrix
+     * @return the {@code classes x count} label matrix
      */
+    @Override
     public MatrixF labels() {
         return labels;
     }
@@ -105,6 +154,7 @@ public final class MNISTAugmentedSet {
      *
      * @param rnd source of the order and of the per-image draws
      */
+    @Override
     public void regenerate(SplittableRandom rnd) {
         // The order and the per-image seeds are drawn here, before any thread starts, so
         // that the pass depends on rnd alone and not on how the work happens to be split.
@@ -139,11 +189,11 @@ public final class MNISTAugmentedSet {
 
     private byte[] distort(byte[] image, long seed) {
         SplittableRandom rnd = new SplittableRandom(seed);
-        int draw = rnd.nextInt(TOTAL_WEIGHT);
-        if (draw < IDENTITY_WEIGHT) {
+        int draw = rnd.nextInt(totalWeight);
+        if (draw < identityWeight) {
             return image;
         }
-        if (draw < IDENTITY_WEIGHT + AFFINE_WEIGHT) {
+        if (draw < identityWeight + affineWeight) {
             return MNISTAugmenter.randomAffine(image, w, h, rnd);
         }
         return MNISTAugmenter.randomElastic(image, w, h, rnd);

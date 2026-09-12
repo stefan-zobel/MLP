@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
-public class MNISTAugmentedSetTest {
+public class AugmentedSetTest {
 
     private static final int W = 28;
     private static final int H = 28;
@@ -58,11 +58,11 @@ public class MNISTAugmentedSetTest {
         return labels;
     }
 
-    private static MNISTAugmentedSet set() {
-        return new MNISTAugmentedSet(sourceData(), COUNT, W, H, oneHotLabels());
+    private static AugmentedSet set() {
+        return new AugmentedSet(sourceData(), COUNT, W, H, oneHotLabels());
     }
 
-    private static int labelOf(MNISTAugmentedSet set, int column) {
+    private static int labelOf(AugmentedSet set, int column) {
         float[] labels = set.labels().getArrayUnsafe();
         for (int r = 0; r < LABEL_ROWS; ++r) {
             if (labels[column * LABEL_ROWS + r] == 1.0f) {
@@ -73,7 +73,7 @@ public class MNISTAugmentedSetTest {
     }
 
     // the source index whose pixels the column reproduces exactly, or -1 if it was distorted
-    private static int undistortedSource(MNISTAugmentedSet set, byte[] data, int column) {
+    private static int undistortedSource(AugmentedSet set, byte[] data, int column) {
         float[] images = set.images().getArrayUnsafe();
         for (int i = 0; i < COUNT; ++i) {
             boolean equal = true;
@@ -89,7 +89,7 @@ public class MNISTAugmentedSetTest {
 
     @Test
     public void everyPassUsesEveryImageExactlyOnce() {
-        MNISTAugmentedSet set = set();
+        AugmentedSet set = set();
         SplittableRandom rnd = new SplittableRandom(7L);
         for (int pass = 0; pass < 20; ++pass) {
             set.regenerate(rnd);
@@ -107,7 +107,7 @@ public class MNISTAugmentedSetTest {
     @Test
     public void undistortedColumnsCarryTheirOwnLabel() {
         byte[] data = sourceData();
-        MNISTAugmentedSet set = set();
+        AugmentedSet set = set();
         SplittableRandom rnd = new SplittableRandom(11L);
         int checked = 0;
         for (int pass = 0; pass < 100; ++pass) {
@@ -126,8 +126,8 @@ public class MNISTAugmentedSetTest {
 
     @Test
     public void aPassIsReproducible() {
-        MNISTAugmentedSet a = set();
-        MNISTAugmentedSet b = set();
+        AugmentedSet a = set();
+        AugmentedSet b = set();
         a.regenerate(new SplittableRandom(3L));
         b.regenerate(new SplittableRandom(3L));
         assertArrayEquals(a.images().getArrayUnsafe(), b.images().getArrayUnsafe());
@@ -136,7 +136,7 @@ public class MNISTAugmentedSetTest {
 
     @Test
     public void successivePassesDiffer() {
-        MNISTAugmentedSet set = set();
+        AugmentedSet set = set();
         SplittableRandom rnd = new SplittableRandom(5L);
         set.regenerate(rnd);
         float[] first = set.images().getArrayUnsafe().clone();
@@ -146,7 +146,7 @@ public class MNISTAugmentedSetTest {
 
     @Test
     public void valuesStayInTheUnitInterval() {
-        MNISTAugmentedSet set = set();
+        AugmentedSet set = set();
         set.regenerate(new SplittableRandom(13L));
         for (float v : set.images().getArrayUnsafe()) {
             assertTrue(v >= 0.0f && v <= 1.0f, "value " + v);
@@ -157,12 +157,40 @@ public class MNISTAugmentedSetTest {
     public void rejectsALabelCountMismatch() {
         byte[] data = sourceData();
         MatrixF labels = Matrices.createF(LABEL_ROWS, COUNT - 1);
-        assertThrows(IllegalArgumentException.class, () -> new MNISTAugmentedSet(data, COUNT, W, H, labels));
+        assertThrows(IllegalArgumentException.class, () -> new AugmentedSet(data, COUNT, W, H, labels));
     }
 
     @Test
     public void rejectsAMismatchedSourceLength() {
         MatrixF labels = oneHotLabels();
-        assertThrows(IllegalArgumentException.class, () -> new MNISTAugmentedSet(new byte[10], COUNT, W, H, labels));
+        assertThrows(IllegalArgumentException.class, () -> new AugmentedSet(new byte[10], COUNT, W, H, labels));
+    }
+    @Test
+    public void identityWeightsOnlyLeaveEveryImageAlone() {
+        byte[] data = sourceData();
+        AugmentedSet set = new AugmentedSet(data, COUNT, W, H, oneHotLabels(), 1, 0, 0);
+        SplittableRandom rnd = new SplittableRandom(17L);
+        for (int pass = 0; pass < 10; ++pass) {
+            set.regenerate(rnd);
+            for (int j = 0; j < COUNT; ++j) {
+                int source = undistortedSource(set, data, j);
+                assertTrue(source >= 0, "pass " + pass + ", column " + j + " was distorted");
+                assertEquals(source, labelOf(set, j), "pass " + pass + ", column " + j);
+            }
+        }
+    }
+
+    @Test
+    public void rejectsWeightsThatAreAllZero() {
+        byte[] data = sourceData();
+        MatrixF labels = oneHotLabels();
+        assertThrows(IllegalArgumentException.class, () -> new AugmentedSet(data, COUNT, W, H, labels, 0, 0, 0));
+    }
+
+    @Test
+    public void rejectsANegativeWeight() {
+        byte[] data = sourceData();
+        MatrixF labels = oneHotLabels();
+        assertThrows(IllegalArgumentException.class, () -> new AugmentedSet(data, COUNT, W, H, labels, 1, -1, 3));
     }
 }

@@ -332,7 +332,7 @@ public final class MNISTAugmenter {
 
     // package-private because MNISTAugmentedSet needs the raw bytes
     static Images read(String path) throws IOException {
-        try (DataInputStream in = MNIST.getDataInputStream(path)) {
+        try (DataInputStream in = Idx.getDataInputStream(path)) {
             int count = in.readInt();
             int rows = in.readInt();
             int cols = in.readInt();

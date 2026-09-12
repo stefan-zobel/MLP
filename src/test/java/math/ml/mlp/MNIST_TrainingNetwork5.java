@@ -19,8 +19,8 @@ import java.security.SecureRandom;
 import java.util.SplittableRandom;
 
 import math.cern.Arithmetic;
+import math.ml.loader.AugmentedSet;
 import math.ml.loader.MNIST;
-import math.ml.loader.MNISTAugmentedSet;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 import net.jamu.matrix.Statistics;
@@ -52,7 +52,7 @@ public class MNIST_TrainingNetwork5 extends AbstractNetwork {
     // 784 x 60_000, refilled before every pass. The seven stored sets are 420_000 fixed
     // columns that a long enough run memorizes; seven fresh passes are the same 420_000
     // columns per epoch, but never the same ones twice.
-    private static final MNISTAugmentedSet DATA = MNISTAugmentedSet.forTraining();
+    private static final AugmentedSet DATA = AugmentedSet.forMnistTraining();
     private static final int PASSES_PER_EPOCH = 7;
 
     private static final MatrixF TEST_IMAGES = Statistics.rescaleInplace(MNIST.getTestSetImages(), LOWER, UPPER);
