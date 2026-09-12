@@ -64,8 +64,11 @@ public class MNIST_TrainingNetwork5 extends AbstractNetwork {
     // fixed, with no early break: the cosine decay needs a known horizon to reach its
     // floor, and a run that stops early turns that horizon into a mere upper bound.
     // 28 of them are 58_800 steps, the budget the seven stored sets got, so the two runs
-    // differ in one thing only. The plateau that made 28 the right number was measured on
-    // fixed data, though, and may sit elsewhere once the data stops repeating.
+    // differ in one thing only. 42 epochs were measured against this and not kept: 0.9956
+    // against 0.9952 on one seed, where the best value arrived as late as epoch 38, but
+    // 0.9951 against 0.9950 on the other, where it arrived in epoch 29 and the thirteen
+    // remaining epochs added nothing. Half again the time for a gain that does not clear
+    // the spread between seeds.
     private static final int NUM_EPOCHS = 28;
     // tuned over six epochs on the 180_000-column variant that still had dropout: 0.9855 at
     // 3e-4, 0.9882 at 1e-3, 0.9885 at 3e-3, 0.9903 at 1e-2, 0.9904 at 2e-2, then 0.9894 at
