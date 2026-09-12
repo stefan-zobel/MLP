@@ -1,0 +1,179 @@
+/*
+ * Copyright 2026 Stefan Zobel
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package math.ml.loader;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Arrays;
+
+import org.junit.jupiter.api.Test;
+
+public class MNISTAugmenterTest {
+
+    private static final int W = 28;
+    private static final int H = 28;
+
+    private static byte[] ramp() {
+        byte[] img = new byte[W * H];
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                // asymmetric in both axes, so a swapped or mirrored axis cannot pass
+                img[y * W + x] = (byte) ((3 * x + 7 * y) % 256);
+            }
+        }
+        return img;
+    }
+
+    private static byte[] centeredBlock(int size, int value) {
+        byte[] img = new byte[W * H];
+        int from = (W - size) / 2;
+        for (int y = from; y < from + size; ++y) {
+            for (int x = from; x < from + size; ++x) {
+                img[y * W + x] = (byte) value;
+            }
+        }
+        return img;
+    }
+
+    private static long sum(byte[] img) {
+        long s = 0L;
+        for (byte b : img) {
+            s += b & 0xFF;
+        }
+        return s;
+    }
+
+    @Test
+    public void identityIsExact() {
+        byte[] src = ramp();
+        assertArrayEquals(src, MNISTAugmenter.warp(src, W, H, 0.0, 0.0, 0.0, 1.0));
+    }
+
+    @Test
+    public void wholePixelTranslationShiftsIndices() {
+        byte[] src = ramp();
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 1.0, 0.0, 0.0, 1.0);
+        for (int y = 0; y < H; ++y) {
+            assertEquals(0, dst[y * W] & 0xFF, "column 0 must be carried-in background");
+            for (int x = 1; x < W; ++x) {
+                assertEquals(src[y * W + x - 1] & 0xFF, dst[y * W + x] & 0xFF);
+            }
+        }
+    }
+
+    @Test
+    public void wholePixelTranslationMovesDownwards() {
+        byte[] src = ramp();
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 0.0, 1.0, 0.0, 1.0);
+        for (int x = 0; x < W; ++x) {
+            assertEquals(0, dst[x] & 0xFF);
+        }
+        for (int y = 1; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                assertEquals(src[(y - 1) * W + x] & 0xFF, dst[y * W + x] & 0xFF);
+            }
+        }
+    }
+
+    @Test
+    public void halfPixelTranslationAveragesNeighbours() {
+        byte[] src = ramp();
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 0.5, 0.0, 0.0, 1.0);
+        for (int y = 0; y < H; ++y) {
+            for (int x = 1; x < W; ++x) {
+                int expected = Math.round(0.5f * (src[y * W + x - 1] & 0xFF) + 0.5f * (src[y * W + x] & 0xFF));
+                assertEquals(expected, dst[y * W + x] & 0xFF, 1);
+            }
+        }
+    }
+
+    @Test
+    public void quarterTurnRotatesTheGrid() {
+        byte[] src = ramp();
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 0.0, 0.0, Math.PI / 2.0, 1.0);
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                assertEquals(src[(W - 1 - x) * W + y] & 0xFF, dst[y * W + x] & 0xFF, 1);
+            }
+        }
+    }
+
+    @Test
+    public void fullTurnIsIdentity() {
+        byte[] src = ramp();
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 0.0, 0.0, 2.0 * Math.PI, 1.0);
+        for (int i = 0; i < src.length; ++i) {
+            assertEquals(src[i] & 0xFF, dst[i] & 0xFF, 1);
+        }
+    }
+
+    @Test
+    public void translationOffTheGridYieldsZero() {
+        byte[] dst = MNISTAugmenter.warp(ramp(), W, H, 100.0, 0.0, 0.0, 1.0);
+        assertEquals(0L, sum(dst));
+    }
+
+    @Test
+    public void enlargingScalesTheArea() {
+        byte[] src = centeredBlock(8, 255);
+        double scale = 1.25;
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 0.0, 0.0, 0.0, scale);
+        double ratio = sum(dst) / (double) sum(src);
+        assertEquals(scale * scale, ratio, 0.1, "mass should grow with the square of the scale");
+    }
+
+    @Test
+    public void shrinkingScalesTheArea() {
+        byte[] src = centeredBlock(12, 255);
+        double scale = 0.8;
+        byte[] dst = MNISTAugmenter.warp(src, W, H, 0.0, 0.0, 0.0, scale);
+        double ratio = sum(dst) / (double) sum(src);
+        assertEquals(scale * scale, ratio, 0.1);
+    }
+
+    @Test
+    public void extremeParametersStayInByteRange() {
+        byte[] src = new byte[W * H];
+        Arrays.fill(src, (byte) 255);
+        byte[] dst = MNISTAugmenter.warp(src, W, H, -1.7, 1.9, Math.toRadians(-12.0), 1.1);
+        for (byte b : dst) {
+            int v = b & 0xFF;
+            assertTrue(v >= 0 && v <= 255);
+        }
+    }
+
+    @Test
+    public void isDeterministic() {
+        byte[] src = ramp();
+        byte[] a = MNISTAugmenter.warp(src, W, H, -0.3, 1.4, 0.17, 0.94);
+        byte[] b = MNISTAugmenter.warp(src, W, H, -0.3, 1.4, 0.17, 0.94);
+        assertArrayEquals(a, b);
+    }
+
+    @Test
+    public void rejectsAMismatchedLength() {
+        assertThrows(IllegalArgumentException.class, () -> MNISTAugmenter.warp(new byte[10], W, H, 0.0, 0.0, 0.0, 1.0));
+    }
+
+    @Test
+    public void rejectsANonPositiveScale() {
+        byte[] src = ramp();
+        assertThrows(IllegalArgumentException.class, () -> MNISTAugmenter.warp(src, W, H, 0.0, 0.0, 0.0, 0.0));
+    }
+}
