@@ -57,7 +57,7 @@ class ResidualBranchTest {
         }
 
         MatrixF grads = input(4, 3, 34L);
-        MatrixF inputGrads = layer.backward(grads.copy(), 0.0f);
+        MatrixF inputGrads = layer.backward(grads.copy());
         for (int c = 0; c < grads.numColumns(); ++c) {
             for (int r = 0; r < grads.numRows(); ++r) {
                 assertEquals(grads.getUnsafe(r, c), inputGrads.getUnsafe(r, c), 1e-6f);
@@ -91,6 +91,6 @@ class ResidualBranchTest {
         ResidualBranch layer = new ResidualBranch(new Hidden(4, 4, "rb3"));
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(4, 3, 25L));
-        assertNull(layer.backward(input(4, 3, 26L), 0.1f));
+        assertNull(layer.backward(input(4, 3, 26L)));
     }
 }

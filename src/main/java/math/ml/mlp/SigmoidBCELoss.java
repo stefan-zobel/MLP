@@ -53,7 +53,7 @@ public class SigmoidBCELoss extends AbstractLoss {
     }
 
     @Override
-    public MatrixF backward(MatrixF unused1, float unused2) {
+    public MatrixF backward(MatrixF unused1) {
         if (mode == NetworkMode.INFER) {
             return null;
         }

@@ -83,7 +83,7 @@ class ParallelBranchesTest {
                 List.of(new Hidden(4, 4, "a1")));
         layer.setMode(NetworkMode.TRAIN);
         layer.forward(input(4, 3, 14L));
-        layer.backward(input(8, 3, 15L), 0.0f);
+        layer.backward(input(8, 3, 15L));
         assertFalse(probe.wasMutated(), "the accumulator overwrote the matrix branch 0 returned");
     }
 
@@ -92,7 +92,7 @@ class ParallelBranchesTest {
         ParallelBranches layer = new ParallelBranches(List.of(new Hidden(4, 4, "i1")));
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(4, 3, 16L));
-        assertNull(layer.backward(input(4, 3, 17L), 0.1f));
+        assertNull(layer.backward(input(4, 3, 17L)));
     }
 
     /** A layer that keeps a reference to the gradient it returns, like Dropout does. */
@@ -114,7 +114,7 @@ class ParallelBranchesTest {
         }
 
         @Override
-        public MatrixF backward(MatrixF grads, float learningRate) {
+        public MatrixF backward(MatrixF grads) {
             returned = input(rows, cols, 18L);
             snapshot = returned.copy();
             return returned;

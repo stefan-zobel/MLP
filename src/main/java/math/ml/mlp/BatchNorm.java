@@ -23,6 +23,7 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -58,9 +59,9 @@ import net.jamu.matrix.MatrixF;
  * </pre>
  *
  * <h2>Backward pass</h2>
- * Full analytic gradient through all three statistics.  Updates {@code gamma} and
- * {@code beta} in place (averaged over the batch, consistent with
- * {@link Hidden#backward}).
+ * Full analytic gradient through all three statistics. The gradients of {@code gamma}
+ * and {@code beta} are left in their {@link Parameter} buffers, averaged over the
+ * batch as every other layer leaves them; an {@link Optimizer} applies them.
  */
 public class BatchNorm extends AbstractLayer {
 
@@ -74,9 +75,9 @@ public class BatchNorm extends AbstractLayer {
     /** Weight for new batch statistics in the running-average update. */
     private final float   momentum;
 
-    // Learnable parameters (features x 1)
-    private final MatrixF gamma;       // scale,  initialized to 1
-    private final MatrixF beta;        // shift,  initialized to 0
+    // Learnable parameters (features x 1); each carries its own gradient buffer
+    private final Parameter gamma;     // scale,  initialized to 1
+    private final Parameter beta;      // shift,  initialized to 0
 
     // Running statistics for inference (features x 1)
     private final MatrixF runningMean; // initialized to 0
@@ -87,11 +88,6 @@ public class BatchNorm extends AbstractLayer {
     private final MatrixF batchMean; // per-feature mean
     private final MatrixF batchVar;  // per-feature variance, kept for the running average
     private final MatrixF invStd;    // 1/sqrt(var+eps) per feature
-
-    // Written by every backward and handed straight to the parameter update, which needs
-    // them as matrices; also features x 1
-    private final MatrixF dGamma;
-    private final MatrixF dBeta;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -152,17 +148,16 @@ public class BatchNorm extends AbstractLayer {
         this.name     = name;
         this.storeParameters = store;
 
-        // gamma = 1, runningVar = 1; beta and runningMean stay 0
-        gamma       = Matrices.onesF(features, 1);
-        beta        = Matrices.createF(features, 1);
+        // gamma = 1, runningVar = 1; beta and runningMean stay 0. Neither gamma nor beta
+        // is weight decayed, the same rule every framework follows for a scale and shift.
+        gamma       = new Parameter("gamma", Matrices.onesF(features, 1), false);
+        beta        = new Parameter("beta", Matrices.createF(features, 1), false);
         runningMean = Matrices.createF(features, 1);
         runningVar  = Matrices.onesF(features, 1);
 
         batchMean   = Matrices.createF(features, 1);
         batchVar    = Matrices.createF(features, 1);
         invStd      = Matrices.createF(features, 1);
-        dGamma      = Matrices.createF(features, 1);
-        dBeta       = Matrices.createF(features, 1);
 
         if (load) {
             try (FileInputStream fis = new FileInputStream(LOAD_DIR + "bn_" + name)) {
@@ -181,8 +176,8 @@ public class BatchNorm extends AbstractLayer {
      * @throws IOException if writing fails
      */
     void writeParameters(OutputStream os) throws IOException {
-        Matrices.serializeF(gamma, os);
-        Matrices.serializeF(beta, os);
+        Matrices.serializeF(gamma.value(), os);
+        Matrices.serializeF(beta.value(), os);
         Matrices.serializeF(runningMean, os);
         Matrices.serializeF(runningVar, os);
     }
@@ -195,8 +190,8 @@ public class BatchNorm extends AbstractLayer {
      * @throws IOException if reading fails
      */
     void readParameters(InputStream is) throws IOException {
-        gamma.setInplace(Matrices.deserializeF(is));
-        beta.setInplace(Matrices.deserializeF(is));
+        gamma.value().setInplace(Matrices.deserializeF(is));
+        beta.value().setInplace(Matrices.deserializeF(is));
         runningMean.setInplace(Matrices.deserializeF(is));
         runningVar.setInplace(Matrices.deserializeF(is));
     }
@@ -223,6 +218,12 @@ public class BatchNorm extends AbstractLayer {
     // -------------------------------------------------------------------------
     // Layer contract
     // -------------------------------------------------------------------------
+
+    /** The scale and the shift; the running statistics are not trained. */
+    @Override
+    public List<Parameter> parameters() {
+        return List.of(gamma, beta);
+    }
 
     @Override
     public MatrixF forward(MatrixF input) {
@@ -308,8 +309,8 @@ public class BatchNorm extends AbstractLayer {
     private void normalize(float[] x, float[] out, int from, int to) {
         float[] mean = batchMean.getArrayUnsafe();
         float[] inv = invStd.getArrayUnsafe();
-        float[] g = gamma.getArrayUnsafe();
-        float[] b = beta.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
+        float[] b = beta.value().getArrayUnsafe();
         for (int i = from; i < to; i += features) {
             for (int r = 0; r < features; ++r) {
                 out[i + r] = (x[i + r] - mean[r]) * inv[r] * g[r] + b[r];
@@ -333,7 +334,7 @@ public class BatchNorm extends AbstractLayer {
      * </pre>
      */
     @Override
-    public MatrixF backward(MatrixF dLdy, float learningRate) {
+    public MatrixF backward(MatrixF dLdy) {
         if (mode == NetworkMode.INFER) {
             return null;
         }
@@ -350,9 +351,12 @@ public class BatchNorm extends AbstractLayer {
         inputGradient(dLdy.getArrayUnsafe(), dVar, dMean, m, dLdx.getArrayUnsafe(), 0,
                 dLdx.getArrayUnsafe().length);
 
-        // last of all, because everything above reads the gamma the forward pass used
-        gamma.addInplace(-learningRate / m, dGamma);
-        beta.addInplace(-learningRate / m, dBeta);
+        // The reduction left the raw sum over the batch in the two gradient buffers;
+        // averaging here is what makes every parameter gradient in this framework a mean.
+        // Nothing is applied to gamma or beta: the Optimizer does that after the whole
+        // backward pass, which is also why gamma still holds what the forward pass used.
+        gamma.grad().scaleInplace(1.0f / m);
+        beta.grad().scaleInplace(1.0f / m);
 
         // The only cached matrix left is the caller's input; batchMean, batchVar and
         // invStd are features x 1 and are simply overwritten by the next forward.
@@ -377,7 +381,7 @@ public class BatchNorm extends AbstractLayer {
         float[] x = input.getArrayUnsafe();
         float[] mean = batchMean.getArrayUnsafe();
         float[] inv = invStd.getArrayUnsafe();
-        float[] g = gamma.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
         double[] sumGamma = new double[features];
         double[] sumBeta = new double[features];
         double[] sumVar = new double[features];
@@ -396,8 +400,8 @@ public class BatchNorm extends AbstractLayer {
             }
         }
 
-        float[] dg = dGamma.getArrayUnsafe();
-        float[] db = dBeta.getArrayUnsafe();
+        float[] dg = gamma.grad().getArrayUnsafe();
+        float[] db = beta.grad().getArrayUnsafe();
         float reciprocal = 1.0f / (dy.length / features);
         for (int r = 0; r < features; ++r) {
             dg[r] = (float) sumGamma[r];
@@ -426,7 +430,7 @@ public class BatchNorm extends AbstractLayer {
         float[] x = input.getArrayUnsafe();
         float[] mean = batchMean.getArrayUnsafe();
         float[] inv = invStd.getArrayUnsafe();
-        float[] g = gamma.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
         float twoOverM = 2.0f / m;
         for (int i = from; i < to; i += features) {
             for (int r = 0; r < features; ++r) {
@@ -457,8 +461,8 @@ public class BatchNorm extends AbstractLayer {
         float[] in = x.getArrayUnsafe();
         float[] out = output.getArrayUnsafe();
         float[] mu = mean.getArrayUnsafe();
-        float[] g = gamma.getArrayUnsafe();
-        float[] b = beta.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
+        float[] b = beta.value().getArrayUnsafe();
         for (int i = 0; i < in.length; i += features) {
             for (int r = 0; r < features; ++r) {
                 out[i + r] = (in[i + r] - mu[r]) * inv[r] * g[r] + b[r];

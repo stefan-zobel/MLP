@@ -68,7 +68,7 @@ class ActivationTest {
         MatrixF ones = Matrices.createF(2, 1);
         ones.setUnsafe(0, 0, 1.0f);
         ones.setUnsafe(1, 0, 1.0f);
-        MatrixF g = relu.backward(ones, 0.0f);
+        MatrixF g = relu.backward(ones);
         assertEquals(1.0f, g.getUnsafe(0, 0), 1e-6f, "gradient passes where x > 0");
         assertEquals(0.0f, g.getUnsafe(1, 0), 1e-6f, "gradient is blocked where x < 0");
     }
@@ -91,6 +91,6 @@ class ActivationTest {
         Relu relu = new Relu();
         relu.setMode(NetworkMode.INFER);
         relu.forward(input(4, 3, 80L));
-        assertNull(relu.backward(input(4, 3, 81L), 0.1f));
+        assertNull(relu.backward(input(4, 3, 81L)));
     }
 }

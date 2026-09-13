@@ -23,6 +23,7 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -55,14 +56,9 @@ public class LayerNorm extends AbstractLayer {
     private final String name;
     private final boolean storeParameters;
 
-    // Learnable parameters (features x 1)
-    private final MatrixF gamma;
-    private final MatrixF beta;
-
-    // Written by every backward and handed straight to the parameter update, which needs
-    // them as matrices (features x 1)
-    private final MatrixF dGamma;
-    private final MatrixF dBeta;
+    // Learnable parameters (features x 1); each carries its own gradient buffer
+    private final Parameter gamma;
+    private final Parameter beta;
 
     // One entry per sample, written by a TRAIN forward and read by the backward that
     // follows it. Reused across batches and reallocated only when the batch size changes;
@@ -118,10 +114,9 @@ public class LayerNorm extends AbstractLayer {
         this.name = name;
         this.storeParameters = store;
 
-        gamma = Matrices.onesF(features, 1);
-        beta = Matrices.createF(features, 1);
-        dGamma = Matrices.createF(features, 1);
-        dBeta = Matrices.createF(features, 1);
+        // neither the scale nor the shift is weight decayed
+        gamma = new Parameter("gamma", Matrices.onesF(features, 1), false);
+        beta = new Parameter("beta", Matrices.createF(features, 1), false);
 
         if (load) {
             try (FileInputStream fis = new FileInputStream(LOAD_DIR + "ln_" + name)) {
@@ -130,6 +125,12 @@ public class LayerNorm extends AbstractLayer {
                 throw new UncheckedIOException(e);
             }
         }
+    }
+
+    /** The scale and the shift. */
+    @Override
+    public List<Parameter> parameters() {
+        return List.of(gamma, beta);
     }
 
     @Override
@@ -213,8 +214,8 @@ public class LayerNorm extends AbstractLayer {
      * @param to   one past the last element to write, a multiple of {@code features}
      */
     private void normalize(float[] x, float[] mu, float[] inv, float[] out, int from, int to) {
-        float[] g = gamma.getArrayUnsafe();
-        float[] b = beta.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
+        float[] b = beta.value().getArrayUnsafe();
         for (int i = from; i < to; i += features) {
             int c = i / features;
             for (int r = 0; r < features; ++r) {
@@ -224,11 +225,11 @@ public class LayerNorm extends AbstractLayer {
     }
 
     /**
-     * Backpropagates through the normalization and updates {@code gamma} and
-     * {@code beta}, averaged over the batch as {@link Hidden} does.
+     * Backpropagates through the normalization and leaves the gradients of
+     * {@code gamma} and {@code beta} in their buffers, averaged over the batch.
      */
     @Override
-    public MatrixF backward(MatrixF dLdy, float learningRate) {
+    public MatrixF backward(MatrixF dLdy) {
         if (mode == NetworkMode.INFER) {
             return null;
         }
@@ -246,9 +247,12 @@ public class LayerNorm extends AbstractLayer {
         MatrixF dLdx = Matrices.sameDimF(dLdy);
         inputGradient(dy, meanDxHat, meanDxHatXHat, dLdx.getArrayUnsafe(), 0, dy.length);
 
-        // last of all, because everything above reads the gamma the forward pass used
-        gamma.addInplace(-learningRate / m, dGamma);
-        beta.addInplace(-learningRate / m, dBeta);
+        // The reduction left the raw sum over the batch in the two gradient buffers;
+        // averaging here is what makes every parameter gradient in this framework a mean.
+        // Nothing is applied to gamma or beta: the Optimizer does that after the whole
+        // backward pass, which is also why gamma still holds what the forward pass used.
+        gamma.grad().scaleInplace(1.0f / m);
+        beta.grad().scaleInplace(1.0f / m);
 
         input = null; // inherited from AbstractLayer
         return dLdx;
@@ -272,7 +276,7 @@ public class LayerNorm extends AbstractLayer {
      */
     private void reduce(float[] dy, int m, float[] meanDxHat, float[] meanDxHatXHat) {
         float[] x = input.getArrayUnsafe();
-        float[] g = gamma.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
         double[] sumGamma = new double[features];
         double[] sumBeta = new double[features];
         float reciprocal = 1.0f / features;
@@ -294,8 +298,8 @@ public class LayerNorm extends AbstractLayer {
             meanDxHatXHat[c] = (float) sumDxHatXHat * reciprocal;
         }
 
-        float[] dg = dGamma.getArrayUnsafe();
-        float[] db = dBeta.getArrayUnsafe();
+        float[] dg = gamma.grad().getArrayUnsafe();
+        float[] db = beta.grad().getArrayUnsafe();
         for (int r = 0; r < features; ++r) {
             dg[r] = (float) sumGamma[r];
             db[r] = (float) sumBeta[r];
@@ -316,7 +320,7 @@ public class LayerNorm extends AbstractLayer {
     private void inputGradient(float[] dy, float[] meanDxHat, float[] meanDxHatXHat, float[] out,
             int from, int to) {
         float[] x = input.getArrayUnsafe();
-        float[] g = gamma.getArrayUnsafe();
+        float[] g = gamma.value().getArrayUnsafe();
         for (int i = from; i < to; i += features) {
             int c = i / features;
             for (int r = 0; r < features; ++r) {
@@ -334,8 +338,8 @@ public class LayerNorm extends AbstractLayer {
      * @throws IOException if writing fails
      */
     void writeParameters(OutputStream os) throws IOException {
-        Matrices.serializeF(gamma, os);
-        Matrices.serializeF(beta, os);
+        Matrices.serializeF(gamma.value(), os);
+        Matrices.serializeF(beta.value(), os);
     }
 
     /**
@@ -346,8 +350,8 @@ public class LayerNorm extends AbstractLayer {
      * @throws IOException if reading fails
      */
     void readParameters(InputStream is) throws IOException {
-        gamma.setInplace(Matrices.deserializeF(is));
-        beta.setInplace(Matrices.deserializeF(is));
+        gamma.value().setInplace(Matrices.deserializeF(is));
+        beta.value().setInplace(Matrices.deserializeF(is));
     }
 
     /**

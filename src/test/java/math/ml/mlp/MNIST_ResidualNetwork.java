@@ -152,7 +152,7 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         // -----------------------------------------------------------------------
         // Training loop
         // -----------------------------------------------------------------------
-        final float lr = 0.05f;
+        net.optimizer(new Sgd(0.05f));
 
         // both with the same seed so images and labels stay aligned
         long seed = seeds.nextLong();
@@ -166,7 +166,7 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
                 int startCol = b * BATCH_SIZE;
                 MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
                 MatrixF expected = EXPECT.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
-                net.train(input, expected, lr);
+                net.train(input, expected);
             }
 
             double trainingAccuracy  = Arithmetic.round(epochAccuracySum / NUM_BATCHES_PER_EPOCH, 6);

@@ -18,9 +18,10 @@ package math.ml.mlp;
 import static math.ml.mlp.GradientCheck.H;
 import static math.ml.mlp.GradientCheck.assertInputGradient;
 import static math.ml.mlp.GradientCheck.dot;
-import static math.ml.mlp.GradientCheck.field;
+import static math.ml.mlp.GradientCheck.grad;
 import static math.ml.mlp.GradientCheck.input;
 import static math.ml.mlp.GradientCheck.relativeError;
+import static math.ml.mlp.GradientCheck.value;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,28 +45,26 @@ class BatchNormTest {
     void gammaAndBetaUpdatesMatchNumericalGradients() throws Exception {
         int features = 5;
         int batch = 7;
-        float learningRate = 0.1f;
         MatrixF x = input(features, batch, 3L);
         MatrixF w = input(features, batch, 4L);
 
         BatchNorm layer = new BatchNorm(features);
         layer.setMode(NetworkMode.TRAIN);
-        MatrixF gammaBefore = GradientCheck.<MatrixF>field(layer, "gamma").copy();
-        MatrixF betaBefore = GradientCheck.<MatrixF>field(layer, "beta").copy();
-
         layer.forward(x.copy());
-        layer.backward(w.copy(), learningRate);
+        layer.backward(w.copy());
 
-        MatrixF gamma = field(layer, "gamma");
-        MatrixF beta = field(layer, "beta");
+        // the gradient the optimizer will consume, read directly rather than recovered
+        // from how far an SGD step moved the parameter
+        MatrixF dGamma = grad(layer, "gamma");
+        MatrixF dBeta = grad(layer, "beta");
         for (int r = 0; r < features; ++r) {
-            // the update is gamma_r -= lr * dGamma_r / m, so invert it to recover dGamma_r
-            double appliedGamma = (gammaBefore.getUnsafe(r, 0) - gamma.getUnsafe(r, 0)) / learningRate * batch;
-            double appliedBeta = (betaBefore.getUnsafe(r, 0) - beta.getUnsafe(r, 0)) / learningRate * batch;
+            // the buffers hold the mean over the batch; the numerical check sums
+            double analyticGamma = dGamma.getUnsafe(r, 0) * batch;
+            double analyticBeta = dBeta.getUnsafe(r, 0) * batch;
 
-            assertTrue(relativeError(numericalParameterGradient(features, x, w, "gamma", r), appliedGamma) <= 2e-2,
+            assertTrue(relativeError(numericalParameterGradient(features, x, w, "gamma", r), analyticGamma) <= 2e-2,
                     "gamma gradient mismatch in row " + r);
-            assertTrue(relativeError(numericalParameterGradient(features, x, w, "beta", r), appliedBeta) <= 2e-2,
+            assertTrue(relativeError(numericalParameterGradient(features, x, w, "beta", r), analyticBeta) <= 2e-2,
                     "beta gradient mismatch in row " + r);
         }
     }
@@ -80,10 +79,10 @@ class BatchNormTest {
             MatrixF x = Matrices.randomUniformF(features, batch, 2.0f, 8.0f, i);
             layer.setMode(NetworkMode.TRAIN);
             layer.forward(x);
-            layer.backward(Matrices.createF(features, batch), 0.0f);
+            layer.backward(Matrices.createF(features, batch));
         }
-        MatrixF runningMean = field(layer, "runningMean");
-        MatrixF runningVar = field(layer, "runningVar");
+        MatrixF runningMean = value(layer, "runningMean");
+        MatrixF runningVar = value(layer, "runningVar");
         for (int r = 0; r < features; ++r) {
             assertEquals(5.0, runningMean.getUnsafe(r, 0), 0.3, "runningMean in row " + r);
             assertEquals(3.0, runningVar.getUnsafe(r, 0), 0.5, "runningVar in row " + r);
@@ -114,7 +113,7 @@ class BatchNormTest {
         BatchNorm layer = new BatchNorm(3);
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(3, 4, 7L));
-        assertTrue(layer.backward(input(3, 4, 8L), 0.1f) == null);
+        assertTrue(layer.backward(input(3, 4, 8L)) == null);
     }
 
     @Test
@@ -135,12 +134,15 @@ class BatchNormTest {
         int features = 6;
         int batch = 32;
         BatchNorm original = new BatchNorm(features);
-        // train a little so gamma, beta and the running statistics all move away
-        // from their initial values
+        // train a little so gamma, beta and the running statistics all move away from
+        // their initial values. Without the optimizer step this test would pass
+        // vacuously, both layers still holding gamma 1 and beta 0.
+        Sgd sgd = GradientCheck.sgdOver(original, 0.05f);
         for (int i = 0; i < 20; ++i) {
             original.setMode(NetworkMode.TRAIN);
             original.forward(Matrices.randomUniformF(features, batch, 2.0f, 8.0f, i));
-            original.backward(input(features, batch, 200L + i), 0.05f);
+            original.backward(input(features, batch, 200L + i));
+            sgd.step();
         }
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -150,8 +152,8 @@ class BatchNormTest {
         restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
 
         for (String field : new String[] { "gamma", "beta", "runningMean", "runningVar" }) {
-            MatrixF a = field(original, field);
-            MatrixF b = field(restored, field);
+            MatrixF a = value(original, field);
+            MatrixF b = value(restored, field);
             for (int r = 0; r < features; ++r) {
                 assertEquals(a.getUnsafe(r, 0), b.getUnsafe(r, 0), 0.0f, field + " differs in row " + r);
             }
@@ -163,10 +165,12 @@ class BatchNormTest {
         int features = 5;
         int batch = 24;
         BatchNorm original = new BatchNorm(features);
+        Sgd sgd = GradientCheck.sgdOver(original, 0.05f);
         for (int i = 0; i < 20; ++i) {
             original.setMode(NetworkMode.TRAIN);
             original.forward(Matrices.randomUniformF(features, batch, -1.0f, 4.0f, i));
-            original.backward(input(features, batch, 300L + i), 0.05f);
+            original.backward(input(features, batch, 300L + i));
+            sgd.step();
         }
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -204,7 +208,7 @@ class BatchNormTest {
             throws Exception {
         BatchNorm probe = new BatchNorm(features);
         probe.setMode(NetworkMode.TRAIN);
-        MatrixF parameter = field(probe, name);
+        MatrixF parameter = value(probe, name);
         parameter.setUnsafe(row, 0, parameter.getUnsafe(row, 0) + delta);
         return dot(w, probe.forward(x.copy()));
     }

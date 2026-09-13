@@ -55,7 +55,7 @@ import net.jamu.matrix.MatrixF;
  * bce.registerLossCallback(net::onLossComputationCompleted);
  * net.add(bce);
  * // the training loop passes the original images as reconstruction targets:
- * net.train(images, images, learningRate);
+ * net.train(images, images);
  * }</pre>
  */
 public class BinaryCrossEntropyLoss extends AbstractLoss {

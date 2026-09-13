@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.util.List;
+
 import net.jamu.matrix.MatrixF;
 
 /** One stage of a network: a forward pass, a backward pass and a mode. */
@@ -32,10 +34,9 @@ public interface Layer {
      * Backward pass.
      * 
      * @param grads error gradients with respect to the output of this layer
-     * @param learningRate the learning rate ({@code 0 < r < 1})
      * @return error gradients with respect to the input of this layer
      */
-    MatrixF backward(MatrixF grads, float learningRate);
+    MatrixF backward(MatrixF grads);
 
     /**
      * Switches between training and inference.
@@ -56,7 +57,7 @@ public interface Layer {
     }
 
     /**
-     * Whether {@link #backward(MatrixF, float)} may overwrite the matrix it is
+     * Whether {@link #backward(MatrixF)} may overwrite the matrix it is
      * handed. Neither predicate says anything about the matrix a layer
      * <em>returns</em>, which may still be one of its own buffers.
      *
@@ -64,6 +65,17 @@ public interface Layer {
      */
     default boolean mutatesGradients() {
         return false;
+    }
+
+    /**
+     * The trainable parameters of this layer, for an {@link Optimizer} to update.
+     * Composite layers concatenate those of their sub-layers, without removing
+     * duplicates, exactly as {@link #storeParameters()} visits them.
+     *
+     * @return the parameters, empty by default
+     */
+    default List<Parameter> parameters() {
+        return List.of();
     }
 
     /**

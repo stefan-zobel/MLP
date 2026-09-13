@@ -50,7 +50,7 @@ public class Activation extends AbstractLayer {
 
     // outputGrads : j x m
     @Override
-    public MatrixF backward(MatrixF outputGrads, float unused) {
+    public MatrixF backward(MatrixF outputGrads) {
         if (mode == NetworkMode.INFER) {
             return null;
         }

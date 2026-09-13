@@ -23,14 +23,25 @@ public interface TrainableNetwork extends Network {
 
     /**
      * Trains one batch. Inputs and targets are passed together so that they
-     * cannot come apart.
+     * cannot come apart. The learning rate belongs to the {@link Optimizer}.
      *
-     * @param input        the batch to train on, one sample per column
-     * @param expected     the target values for exactly that batch
-     * @param learningRate the learning rate ({@code 0 < r < 1})
+     * @param input    the batch to train on, one sample per column
+     * @param expected the target values for exactly that batch
      * @return this network
      */
-    Network train(MatrixF input, MatrixF expected, float learningRate);
+    Network train(MatrixF input, MatrixF expected);
+
+    /**
+     * Sets the optimizer that applies the gradients, once. Required before
+     * {@link #train} unless the network has no parameters at all. The default is a
+     * no-op, because not every network is built layer by layer.
+     *
+     * @param optimizer the optimizer
+     * @return this network
+     */
+    default Network optimizer(Optimizer optimizer) {
+        return this;
+    }
 
     /**
      * Appends a layer. The default is a no-op, because not every network is built

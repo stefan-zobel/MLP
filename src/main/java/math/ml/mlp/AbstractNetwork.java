@@ -16,7 +16,9 @@
 package math.ml.mlp;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
 
 import net.jamu.matrix.MatrixF;
 
@@ -39,21 +41,52 @@ public abstract class AbstractNetwork implements TrainableNetwork {
      */
     private boolean copyInput = false;
 
+    /** Every parameter of every layer, in the order the layers were added. */
+    private final ArrayList<Parameter> parameters = new ArrayList<>();
+
+    private Optimizer optimizer;
+
     @Override
     public Network add(Layer layer) {
         layers.add(layer);
         copyInput |= layer.mutatesInput();
+        List<Parameter> own = layer.parameters();
+        parameters.addAll(own);
+        if (optimizer != null) {
+            // registering as we go and registering retroactively below means the order of
+            // add() and optimizer() does not matter, and each parameter is seen once
+            for (Parameter p : own) {
+                optimizer.add(p);
+            }
+        }
         return this;
     }
 
     @Override
-    public Network train(MatrixF input, MatrixF expected, float learningRate) {
+    public Network optimizer(Optimizer optimizer) {
+        if (this.optimizer != null) {
+            throw new IllegalStateException("the optimizer of this network is already set");
+        }
+        this.optimizer = Objects.requireNonNull(optimizer, "optimizer");
+        for (Parameter p : parameters) {
+            optimizer.add(p);
+        }
+        return this;
+    }
+
+    @Override
+    public Network train(MatrixF input, MatrixF expected) {
         if (expected == null) {
             throw new IllegalArgumentException("expected values must not be null");
         }
         if (layers.size() < 2 || !(layers.get(layers.size() - 1) instanceof Loss lossLayer)) {
             throw new IllegalStateException(
                     "training needs at least two layers and the last one must be a Loss");
+        }
+        // after the checks above, so that a malformed layer list is still reported as
+        // such. A network without parameters has nothing for an optimizer to do.
+        if (optimizer == null && !parameters.isEmpty()) {
+            throw new IllegalStateException("this network has trainable parameters but no optimizer");
         }
         // hand the targets to the loss for exactly this batch
         lossLayer.setExpectedValues(expected);
@@ -79,7 +112,11 @@ public abstract class AbstractNetwork implements TrainableNetwork {
                 continue;
             }
             // propagate the gradients backwards to the previous layer
-            input = layer.backward(input, learningRate);
+            input = layer.backward(input);
+        }
+        // every gradient of this batch now exists, so the parameters can move
+        if (optimizer != null) {
+            optimizer.step();
         }
         ++batchCount;
         return this;

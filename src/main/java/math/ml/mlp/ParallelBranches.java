@@ -144,6 +144,18 @@ public class ParallelBranches extends AbstractLayer {
         }
     }
 
+    /** Collects the parameters of every layer in every branch, in branch order. */
+    @Override
+    public List<Parameter> parameters() {
+        List<Parameter> all = new ArrayList<>();
+        for (List<Layer> branch : branches) {
+            for (Layer layer : branch) {
+                all.addAll(layer.parameters());
+            }
+        }
+        return all;
+    }
+
     /**
      * Runs each branch with the same (independently copied) input and returns
      * the vertically stacked output.
@@ -179,13 +191,12 @@ public class ParallelBranches extends AbstractLayer {
      * branch in reverse order, and returns the element-wise sum of the
      * resulting input-side gradients.
      *
-     * @param grads        vertically stacked gradients ({@code (sum k_i) x m})
-     * @param learningRate the learning rate passed through to branch layers
+     * @param grads vertically stacked gradients ({@code (sum k_i) x m})
      * @return summed input-side gradients ({@code n x m}); {@code null} in
      *         {@code INFER} mode
      */
     @Override
-    public MatrixF backward(MatrixF grads, float learningRate) {
+    public MatrixF backward(MatrixF grads) {
         if (mode == NetworkMode.INFER) {
             return null;
         }
@@ -202,7 +213,7 @@ public class ParallelBranches extends AbstractLayer {
             List<Layer> branch = branches.get(b);
             ListIterator<Layer> it = branch.listIterator(branch.size());
             while (it.hasPrevious()) {
-                g = it.previous().backward(g, learningRate);
+                g = it.previous().backward(g);
             }
             // Accumulate (chain rule: same input -> additive gradient terms).
             if (summedInputGrads == null) {

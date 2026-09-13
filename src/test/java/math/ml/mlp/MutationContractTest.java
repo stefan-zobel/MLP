@@ -98,7 +98,7 @@ class MutationContractTest {
 
         MatrixF x = input(4, 3, 43L);
         MatrixF before = x.copy();
-        net.train(x, Matrices.randomUniformF(4, 3, 0.0f, 1.0f, 44L), 0.01f);
+        net.train(x, Matrices.randomUniformF(4, 3, 0.0f, 1.0f, 44L));
 
         for (int c = 0; c < x.numColumns(); ++c) {
             for (int r = 0; r < x.numRows(); ++r) {
@@ -128,7 +128,7 @@ class MutationContractTest {
         assertNotSame(first, second, "forward reused the matrix it returned last time");
         if (mode == NetworkMode.TRAIN) {
             MatrixF grads = input(4, 3, 62L);
-            MatrixF back = layer.backward(grads, 0.0f);
+            MatrixF back = layer.backward(grads);
             assertNotSame(grads, back, "backward returned its own argument");
             assertNotSame(second, back, "backward returned the matrix forward had returned");
         }
@@ -145,7 +145,7 @@ class MutationContractTest {
         }
 
         @Override
-        public MatrixF backward(MatrixF grads, float learningRate) {
+        public MatrixF backward(MatrixF grads) {
             return grads;
         }
     }

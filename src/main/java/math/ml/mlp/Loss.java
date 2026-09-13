@@ -47,7 +47,7 @@ public interface Loss extends Layer {
 
     // by default backward() for a Loss function does nothing and shouldn't be
     // called
-    default MatrixF backward(MatrixF unused1, float unused2) {
+    default MatrixF backward(MatrixF unused1) {
         return null;
     }
 

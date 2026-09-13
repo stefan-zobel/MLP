@@ -65,8 +65,8 @@ class GoldenValuesTest {
     private static final int LN_M = 5;
 
     private static final float[] BN_FORWARD = { 0.23218127f, -0.5216418f, -0.7016284f, 1.1088233f, 0.4537768f,
-            0.11575111f, -0.2394418f, -0.8906371f, 0.7931501f, -1.1812067f, 1.0276277f, 0.5367174f, -0.98699063f,
-            1.3287905f, -1.4754467f, -1.2252694f, -0.3210402f, -0.35550097f, 1.4098165f, 0.10829852f, 0.4438814f,
+            0.11575112f, -0.2394418f, -0.8906371f, 0.7931501f, -1.1812067f, 1.0276277f, 0.5367174f, -0.98699063f,
+            1.3287905f, -1.4754467f, -1.2252694f, -0.3210402f, -0.35550097f, 1.4098165f, 0.108298525f, 0.4438814f,
             -0.33336607f, -1.9011518f, -1.2653513f, -1.4121932f, -0.9923884f, 0.20364757f, 1.527758f, 0.18590665f,
             -1.5400537f, 1.2676712f, -0.6406903f, -0.9777544f, -0.3431806f, 1.0226656f, 1.3490223f, -0.5726643f,
             1.748498f, 1.6915448f, 0.43465155f, -0.5392982f, 1.1975044f };
@@ -78,12 +78,12 @@ class GoldenValuesTest {
             0.8735156f, -0.88229454f, 0.6567441f, 0.20525713f, 0.81464833f, 0.16788898f, -0.3705069f };
     // gamma, beta, runningMean and runningVar end to end, after two training steps
     private static final float[] BN_PARAMS = { 0.9984733f, 1.0413735f, 1.0499685f, 0.98249245f, 0.9048718f, 1.0914133f,
-            -0.08617743f, 0.04006559f, -0.0064586876f, -0.0033687218f, -0.02043232f, 0.010882503f, 0.13489796f,
+            -0.08617743f, 0.040065594f, -0.006458688f, -0.003368722f, -0.020432321f, 0.010882504f, 0.13489796f,
             0.07723726f, 0.044126943f, -0.0948455f, 0.104978964f, 0.11567406f, 0.9264551f, 0.9536139f, 0.988799f,
             0.9333475f, 1.0898134f, 0.9296015f };
-    private static final float[] BN_INFER = { 0.7341161f, -0.10082397f, -0.5057583f, 0.5034192f, 0.87992895f, 0.6638441f,
+    private static final float[] BN_INFER = { 0.7341161f, -0.10082396f, -0.5057583f, 0.5034192f, 0.87992895f, 0.6638441f,
             0.35080194f, -0.43599823f, 0.9880256f, -1.3896075f, 1.5136983f, 1.0253962f, -0.25677222f, 1.5800033f,
-            -1.2790616f, -1.4260315f, 0.02420948f, 0.25910342f, 1.6912451f, 0.47137788f, 0.6389893f, -0.6887498f,
+            -1.2790616f, -1.4260315f, 0.024209479f, 0.25910342f, 1.6912451f, 0.47137788f, 0.6389893f, -0.6887498f,
             -1.7208891f, -0.52233297f, -0.6023578f, -0.52842337f, 0.39891535f, 0.84972686f, 0.5840891f, -0.7582645f,
             1.5757158f, -0.20896086f, -0.7817006f, -0.6968629f, 1.508218f, 1.7230545f, 0.07997369f, 1.9612415f,
             1.8858227f, -0.053876925f, -0.2168378f, 1.5929214f };
@@ -91,7 +91,7 @@ class GoldenValuesTest {
     private static final float[] LN_FORWARD = { 0.89182895f, 0.79319006f, 1.4182012f, -1.7392229f, -0.16019024f,
             -0.73114204f, -0.48290178f, 1.4210542f, 0.52418613f, -1.2589258f, -0.75621927f, 1.1722263f, -1.066696f,
             -0.22274241f, 0.09037234f, 1.4236279f, -1.5336106f, -0.6392651f, 1.3022199f, -0.15355003f, -0.69031155f,
-            -0.995184f, -0.34738564f, 0.18644887f, -1.4661406f, 0.5686733f, 1.8349684f, 0.16454898f, -0.24132855f,
+            -0.995184f, -0.34738564f, 0.18644887f, -1.4661406f, 0.5686733f, 1.8349684f, 0.16454898f, -0.24132857f,
             0.99834675f, 1.6362009f, -0.95980245f, 0.49717158f, -0.4592139f, -1.4651653f };
     private static final float[] LN_BACKWARD = { 0.3148712f, 0.6542052f, -0.53383195f, 0.5262487f, 0.49592698f,
             -0.6127079f, -0.84471214f, 0.13242821f, 0.6974964f, 0.18357442f, -0.058044948f, -0.2060905f, 0.39614478f,
@@ -99,7 +99,7 @@ class GoldenValuesTest {
             -0.2962748f, 0.27328452f, -0.7734766f, 0.10323426f, 0.1357979f, -0.06215901f, 0.6195937f, 0.13644409f,
             1.2267615f, -1.7213614f, -1.5726054f, 0.67963946f, 1.3221854f, -0.07106408f };
     private static final float[] LN_PARAMS = { 0.98691714f, 0.9792012f, 1.1303122f, 1.0119331f, 0.97557783f, 1.0112488f,
-            1.0004334f, -0.016317261f, -0.06595741f, 0.027283654f, -0.00510746f, -0.056057215f, -0.026439141f,
+            1.0004334f, -0.016317263f, -0.06595742f, 0.027283654f, -0.00510746f, -0.056057215f, -0.026439143f,
             0.0050763558f };
     private static final float[] LN_INFER = { 0.8777443f, 0.7515294f, 1.5177605f, -1.7520771f, -0.18658507f, -0.74837685f,
             -0.4804688f, 1.403485f, 0.48535234f, -1.3231275f, -0.76324314f, 1.1293601f, -1.0858077f, -0.22025305f,
@@ -167,7 +167,7 @@ class GoldenValuesTest {
 
         MatrixF expected = Matrices.randomUniformF(6, 5, 0.0f, 1.0f, 33L);
         for (int batch = 0; batch < CHAIN_LOSSES.length; ++batch) {
-            net.train(Matrices.randomUniformF(6, 5, -2.0f, 2.0f, 40L + batch), expected, 0.01f);
+            net.train(Matrices.randomUniformF(6, 5, -2.0f, 2.0f, 40L + batch), expected);
         }
 
         assertEquals(CHAIN_LOSSES.length, losses.size());
@@ -180,18 +180,23 @@ class GoldenValuesTest {
     void batchNormIsUnchanged() throws ReflectiveOperationException {
         BatchNorm bn = new BatchNorm(BN_D);
         bn.setMode(NetworkMode.TRAIN);
+        Sgd sgd = GradientCheck.sgdOver(bn, 0.1f);
         // one step first: gamma starts at exactly 1 and beta at 0, so a dropped scale or
-        // shift would not show up in the very first output
+        // shift would not show up in the very first output. Each step() has to land where
+        // the update used to, at the end of backward: a step after the second forward
+        // would let that forward read a gamma of exactly 1 and move four of these arrays.
         bn.forward(normInput(BN_D, BN_M, 31L));
-        bn.backward(normGrad(BN_D, BN_M, 32L), 0.1f);
+        bn.backward(normGrad(BN_D, BN_M, 32L));
+        sgd.step();
 
         assertExactly(BN_FORWARD, bn.forward(normInput(BN_D, BN_M, 31L)));
-        assertExactly(BN_BACKWARD, bn.backward(normGrad(BN_D, BN_M, 32L), 0.1f));
+        assertExactly(BN_BACKWARD, bn.backward(normGrad(BN_D, BN_M, 32L)));
+        sgd.step();
 
-        MatrixF gamma = GradientCheck.field(bn, "gamma");
-        MatrixF beta = GradientCheck.field(bn, "beta");
-        MatrixF runningMean = GradientCheck.field(bn, "runningMean");
-        MatrixF runningVar = GradientCheck.field(bn, "runningVar");
+        MatrixF gamma = GradientCheck.value(bn, "gamma");
+        MatrixF beta = GradientCheck.value(bn, "beta");
+        MatrixF runningMean = GradientCheck.value(bn, "runningMean");
+        MatrixF runningVar = GradientCheck.value(bn, "runningVar");
         assertExactly(BN_PARAMS, gamma, beta, runningMean, runningVar);
 
         bn.setMode(NetworkMode.INFER);
@@ -202,14 +207,17 @@ class GoldenValuesTest {
     void layerNormIsUnchanged() throws ReflectiveOperationException {
         LayerNorm ln = new LayerNorm(LN_D);
         ln.setMode(NetworkMode.TRAIN);
+        Sgd sgd = GradientCheck.sgdOver(ln, 0.1f);
         ln.forward(normInput(LN_D, LN_M, 33L));
-        ln.backward(normGrad(LN_D, LN_M, 34L), 0.1f);
+        ln.backward(normGrad(LN_D, LN_M, 34L));
+        sgd.step();
 
         assertExactly(LN_FORWARD, ln.forward(normInput(LN_D, LN_M, 33L)));
-        assertExactly(LN_BACKWARD, ln.backward(normGrad(LN_D, LN_M, 34L), 0.1f));
+        assertExactly(LN_BACKWARD, ln.backward(normGrad(LN_D, LN_M, 34L)));
+        sgd.step();
 
-        MatrixF gamma = GradientCheck.field(ln, "gamma");
-        MatrixF beta = GradientCheck.field(ln, "beta");
+        MatrixF gamma = GradientCheck.value(ln, "gamma");
+        MatrixF beta = GradientCheck.value(ln, "beta");
         assertExactly(LN_PARAMS, gamma, beta);
 
         ln.setMode(NetworkMode.INFER);
@@ -227,7 +235,7 @@ class GoldenValuesTest {
     private static void assertNormEdge(Layer layer, int rows, int cols, float[] forward, float[] backward) {
         layer.setMode(NetworkMode.TRAIN);
         assertExactly(forward, layer.forward(normInput(rows, cols, 35L)));
-        assertExactly(backward, layer.backward(normGrad(rows, cols, 36L), 0.1f));
+        assertExactly(backward, layer.backward(normGrad(rows, cols, 36L)));
     }
 
     private static MatrixF normInput(int rows, int cols, long seed) {
@@ -243,7 +251,7 @@ class GoldenValuesTest {
         MatrixF g = Matrices.randomUniformF(4, 3, -1.0f, 1.0f, 22L);
         activation.setMode(NetworkMode.TRAIN);
         assertExactly(forward, activation.forward(x.copy()));
-        assertExactly(backward, activation.backward(g.copy(), 0.0f));
+        assertExactly(backward, activation.backward(g.copy()));
     }
 
     /** Several matrices are matched against one array, laid out end to end. */
