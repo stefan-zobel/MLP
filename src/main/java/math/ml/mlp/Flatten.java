@@ -58,13 +58,18 @@ public class Flatten extends AbstractLayer {
         return channels * h * w;
     }
 
-    @Override
-    public MatrixF forward(MatrixF in) {
-        int m = batchOf(in);
-        ensureBuffers(m);
-        float[] src = in.getArrayUnsafe();
-        float[] dst = output.getArrayUnsafe();
-        int spatial = h * w;
+    /**
+     * Writes the conv layout {@code src} into the {@code features x batch} layout
+     * {@code dst}. Package-private because {@link Unflatten} runs the same mapping the
+     * other way round, and one copy of the index arithmetic is one place to get it wrong.
+     *
+     * @param src      the conv layout, channels x (m * spatial)
+     * @param dst      the flat layout, (channels * spatial) x m
+     * @param channels channels of the conv layout
+     * @param spatial  positions per sample
+     * @param m        number of samples
+     */
+    static void gather(float[] src, float[] dst, int channels, int spatial, int m) {
         int features = channels * spatial;
         for (int s = 0; s < m; ++s) {
             int sample = s * spatial * channels;
@@ -75,20 +80,20 @@ public class Flatten extends AbstractLayer {
                 }
             }
         }
-        return output;
     }
 
-    @Override
-    public MatrixF backward(MatrixF outputGrads) {
-        if (mode == NetworkMode.INFER) {
-            return null;
-        }
-        int spatial = h * w;
+    /**
+     * The inverse of {@link #gather}: writes the flat layout {@code src} into the conv
+     * layout {@code dst}.
+     *
+     * @param src      the flat layout, (channels * spatial) x m
+     * @param dst      the conv layout, channels x (m * spatial)
+     * @param channels channels of the conv layout
+     * @param spatial  positions per sample
+     * @param m        number of samples
+     */
+    static void scatter(float[] src, float[] dst, int channels, int spatial, int m) {
         int features = channels * spatial;
-        int m = outputGrads.numColumns();
-        ensureBuffers(m);
-        float[] src = outputGrads.getArrayUnsafe();
-        float[] dst = inputGrads.getArrayUnsafe();
         for (int s = 0; s < m; ++s) {
             int sample = s * spatial * channels;
             int source = s * features;
@@ -98,6 +103,24 @@ public class Flatten extends AbstractLayer {
                 }
             }
         }
+    }
+
+    @Override
+    public MatrixF forward(MatrixF in) {
+        int m = batchOf(in);
+        ensureBuffers(m);
+        gather(in.getArrayUnsafe(), output.getArrayUnsafe(), channels, h * w, m);
+        return output;
+    }
+
+    @Override
+    public MatrixF backward(MatrixF outputGrads) {
+        if (mode == NetworkMode.INFER) {
+            return null;
+        }
+        int m = outputGrads.numColumns();
+        ensureBuffers(m);
+        scatter(outputGrads.getArrayUnsafe(), inputGrads.getArrayUnsafe(), channels, h * w, m);
         return inputGrads;
     }
 
