@@ -145,7 +145,7 @@ public class MNIST_VAE extends AbstractNetwork {
         ));
 
         // --- Reparameterization + KL gradient (lambda = 1.0) -------------
-        net.add(new VAEReparamLayer(LATENT_DIM, 1.0f, seeds.nextLong()));
+        net.add(new VAEReparamLayer(LATENT_DIM, 1.0f, "reparam", seeds.nextLong()));
 
         // --- Decoder ------------------------------------------------------
         net.add(new Hidden(LATENT_DIM, 128, "dec1", seeds.nextLong()));

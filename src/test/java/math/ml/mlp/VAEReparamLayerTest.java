@@ -17,7 +17,9 @@ package math.ml.mlp;
 
 import static math.ml.mlp.GradientCheck.field;
 import static math.ml.mlp.GradientCheck.input;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +38,51 @@ class VAEReparamLayerTest {
 
     private static final int LATENT = 5;
     private static final int BATCH = 4;
+
+    @Test
+    void theDrawCountFollowsTheTrainingForwardPassesOnly() throws Exception {
+        VAEReparamLayer layer = new VAEReparamLayer(LATENT, 1.0f, "r", 9L);
+        layer.setMode(NetworkMode.INFER);
+        layer.forward(input(2 * LATENT, BATCH, 1L));
+        assertEquals(0L, draws(layer), "inference returns mu and draws no epsilon");
+
+        layer.setMode(NetworkMode.TRAIN);
+        layer.forward(input(2 * LATENT, BATCH, 2L));
+        layer.forward(input(2 * LATENT, BATCH, 3L));
+        assertEquals(2L, draws(layer));
+    }
+
+    @Test
+    void aLayerAdvancedToNDrawsWhatOneThatRanNTimesWouldDraw() throws Exception {
+        VAEReparamLayer straight = new VAEReparamLayer(LATENT, 1.0f, "r", 9L);
+        straight.setMode(NetworkMode.TRAIN);
+        for (int i = 0; i < 5; ++i) {
+            straight.forward(input(2 * LATENT, BATCH, 10L + i));
+        }
+        MemoryBundle bundle = new MemoryBundle();
+        straight.writeParameters(bundle.sink());
+        MatrixF afterStraight = straight.forward(input(2 * LATENT, BATCH, 99L));
+
+        VAEReparamLayer resumed = new VAEReparamLayer(LATENT, 1.0f, "r", 9L);
+        resumed.setMode(NetworkMode.TRAIN);
+        resumed.readParameters(bundle.source());
+        MatrixF afterResumed = resumed.forward(input(2 * LATENT, BATCH, 99L));
+
+        assertArrayEquals(afterStraight.getArrayUnsafe(), afterResumed.getArrayUnsafe());
+    }
+
+    @Test
+    void anUnnamedLayerCannotBeInABundle() {
+        MemoryBundle bundle = new MemoryBundle();
+        assertThrows(IllegalStateException.class,
+                () -> new VAEReparamLayer(LATENT, 1.0f, 9L).writeParameters(bundle.sink()));
+    }
+
+    private static long draws(VAEReparamLayer layer) throws Exception {
+        MemoryBundle bundle = new MemoryBundle();
+        layer.writeParameters(bundle.sink());
+        return ParameterStore.readLong(bundle.source(), "r/draws");
+    }
 
     @Test
     void forwardAppliesTheReparameterizationTrick() throws Exception {

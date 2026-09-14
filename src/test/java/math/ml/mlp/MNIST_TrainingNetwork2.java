@@ -83,13 +83,13 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
 
         // He ahead of every ReLU, Glorot on the output layer, which feeds the loss directly
         net.add(new Hidden(INPUT_SIZE, 768, "layer1", Init.HE, seeds.nextLong()));
-        net.add(new Dropout(dropoutRate / 3, seeds.nextLong())); // / 5 / 3
+        net.add(new Dropout(dropoutRate / 3, "drop1", seeds.nextLong())); // / 5 / 3
         net.add(new Relu()); // 768
         net.add(new Hidden(768, 384, "layer2", Init.HE, seeds.nextLong()));
-        net.add(new Dropout(dropoutRate, seeds.nextLong())); // / 4 / 2
+        net.add(new Dropout(dropoutRate, "drop2", seeds.nextLong())); // / 4 / 2
         net.add(new Relu()); // 384
         net.add(new Hidden(384, 256, "layer3", Init.HE, seeds.nextLong()));
-        net.add(new Dropout(dropoutRate, seeds.nextLong())); // / 2
+        net.add(new Dropout(dropoutRate, "drop3", seeds.nextLong())); // / 2
         net.add(new Relu()); // 256
         net.add(new Hidden(256, NUM_LABELS, "layer4", seeds.nextLong()));
         // no dropout and no activation here: SoftmaxCrossEntropyLoss wants raw logits

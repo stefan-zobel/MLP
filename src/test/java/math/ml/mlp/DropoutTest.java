@@ -16,7 +16,9 @@
 package math.ml.mlp;
 
 import static math.ml.mlp.GradientCheck.input;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -29,6 +31,75 @@ import net.jamu.matrix.MatrixF;
 
 /** The tests on the seedless constructor draw an unseeded mask, so they assert statistical bounds. */
 class DropoutTest {
+
+    @Test
+    void theDrawCountFollowsTheTrainingForwardPassesOnly() throws Exception {
+        Dropout layer = new Dropout(0.4f, "d", 7L);
+        layer.setMode(NetworkMode.INFER);
+        layer.forward(input(4, 3, 1L));
+        assertEquals(0L, draws(layer), "inference draws no mask");
+
+        layer.setMode(NetworkMode.TRAIN);
+        layer.forward(input(4, 3, 2L));
+        layer.forward(input(4, 3, 3L));
+        assertEquals(2L, draws(layer));
+
+        Dropout off = new Dropout(0.0f, "d", 7L);
+        off.setMode(NetworkMode.TRAIN);
+        off.forward(input(4, 3, 4L));
+        assertEquals(0L, draws(off), "a rate of zero short circuits before the draw");
+    }
+
+    @Test
+    void aLayerAdvancedToNDrawsWhatOneThatRanNTimesWouldDraw() throws Exception {
+        Dropout straight = new Dropout(0.4f, "d", 7L);
+        straight.setMode(NetworkMode.TRAIN);
+        for (int i = 0; i < 5; ++i) {
+            straight.forward(input(4, 3, 10L + i));
+        }
+        MemoryBundle bundle = new MemoryBundle();
+        straight.writeParameters(bundle.sink());
+        MatrixF afterStraight = straight.forward(ones());
+
+        Dropout resumed = new Dropout(0.4f, "d", 7L);
+        resumed.setMode(NetworkMode.TRAIN);
+        resumed.readParameters(bundle.source());
+        MatrixF afterResumed = resumed.forward(ones());
+
+        assertArrayEquals(afterStraight.getArrayUnsafe(), afterResumed.getArrayUnsafe());
+    }
+
+    @Test
+    void aBundleBehindTheLayerIsRefused() throws Exception {
+        Dropout early = new Dropout(0.4f, "d", 7L);
+        MemoryBundle bundle = new MemoryBundle();
+        early.writeParameters(bundle.sink());
+
+        Dropout ahead = new Dropout(0.4f, "d", 7L);
+        ahead.setMode(NetworkMode.TRAIN);
+        ahead.forward(input(4, 3, 5L));
+        assertTrue(assertThrows(IllegalStateException.class, () -> ahead.readParameters(bundle.source()))
+                .getMessage().contains("stops at 0"));
+    }
+
+    @Test
+    void anUnnamedLayerCannotBeInABundle() {
+        MemoryBundle bundle = new MemoryBundle();
+        assertThrows(IllegalStateException.class, () -> new Dropout(0.4f, 7L).writeParameters(bundle.sink()));
+        assertThrows(IllegalStateException.class, () -> new Dropout(0.4f, 7L).readParameters(bundle.source()));
+    }
+
+    private static MatrixF ones() {
+        MatrixF m = Matrices.createF(4, 3);
+        java.util.Arrays.fill(m.getArrayUnsafe(), 1.0f);
+        return m;
+    }
+
+    private static long draws(Dropout layer) throws Exception {
+        MemoryBundle bundle = new MemoryBundle();
+        layer.writeParameters(bundle.sink());
+        return ParameterStore.readLong(bundle.source(), "d/draws");
+    }
 
     @Test
     void invertedDropoutPreservesTheExpectedActivation() {

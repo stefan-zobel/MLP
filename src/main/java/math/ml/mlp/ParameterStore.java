@@ -17,6 +17,8 @@ package math.ml.mlp;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -80,7 +82,36 @@ final class ParameterStore {
     static void requireName(String name, Layer layer) {
         if (name == null) {
             throw new IllegalStateException(layer.getClass().getSimpleName()
-                    + " has trainable parameters but no name, so it cannot be part of a bundle");
+                    + " has state to persist but no name, so it cannot be part of a bundle");
+        }
+    }
+
+    /**
+     * Writes one count into the entry {@code key}. A long does not survive a float matrix,
+     * so it goes as its own eight bytes.
+     *
+     * @param sink  where the entry goes
+     * @param key   the entry name
+     * @param value the count to write
+     * @throws IOException if writing fails
+     */
+    static void writeLong(ParameterSink sink, String key, long value) throws IOException {
+        try (DataOutputStream out = new DataOutputStream(sink.open(key))) {
+            out.writeLong(value);
+        }
+    }
+
+    /**
+     * Reads back what {@link #writeLong} wrote.
+     *
+     * @param source where the entry comes from
+     * @param key    the entry name
+     * @return the count
+     * @throws IOException if reading fails
+     */
+    static long readLong(ParameterSource source, String key) throws IOException {
+        try (DataInputStream in = new DataInputStream(source.open(key))) {
+            return in.readLong();
         }
     }
 

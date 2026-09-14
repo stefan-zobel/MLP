@@ -15,6 +15,7 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
 import java.util.SplittableRandom;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -88,6 +89,12 @@ public class VAEReparamLayer extends AbstractLayer {
     /** Owned by this layer; epsilon is drawn from it once per forward pass. */
     private final SplittableRandom rng;
 
+    /** Names the bundle entry of this layer; without a name it has none. */
+    private final String name;
+
+    /** How far {@link #rng} has been drawn, which is the whole of the resumable state. */
+    private long drawn;
+
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -120,9 +127,53 @@ public class VAEReparamLayer extends AbstractLayer {
      * @param seed      seed for the &epsilon; draws; INFER mode draws nothing
      */
     public VAEReparamLayer(int latentDim, float klWeight, long seed) {
+        this(latentDim, klWeight, null, seed);
+    }
+
+    /**
+     * A named layer takes its place in the bundle of its network, which is what lets a
+     * continued run draw the same &epsilon; the interrupted one would have drawn next.
+     *
+     * @param latentDim dimensionality of the latent space
+     * @param klWeight  weight &lambda; applied to the KL-divergence gradient term
+     * @param name      names the bundle entry of this layer
+     * @param seed      seed for the &epsilon; draws; INFER mode draws nothing
+     */
+    public VAEReparamLayer(int latentDim, float klWeight, String name, long seed) {
         this.latentDim = latentDim;
         this.klWeight = klWeight;
+        this.name = name;
         this.rng = new SplittableRandom(seed);
+    }
+
+    /**
+     * The one place a value leaves {@link #rng}, so that the forward pass and the replay
+     * below cannot draw differently.
+     */
+    private long nextSeed() {
+        ++drawn;
+        return rng.nextLong();
+    }
+
+    @Override
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.writeLong(sink, name + "/draws", drawn);
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        long target = ParameterStore.readLong(source, name + "/draws");
+        if (target < drawn) {
+            throw new IllegalStateException(
+                    name + " has drawn " + drawn + " times and the bundle stops at " + target);
+        }
+        // the sequence only runs forwards, so drawing it down is the same as seeding a fresh
+        // generator and replaying, and it keeps the generator final
+        while (drawn < target) {
+            nextSeed();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -151,7 +202,7 @@ public class VAEReparamLayer extends AbstractLayer {
 
         logVar = input.selectSubmatrix(latentDim, 0, 2 * latentDim - 1, cols - 1);
         sigma = logVar.map(lv -> (float) Math.exp(0.5 * lv));
-        epsilon = Matrices.randomNormalF(latentDim, cols, rng.nextLong());
+        epsilon = Matrices.randomNormalF(latentDim, cols, nextSeed());
         return mu.plus(epsilon.hadamard(sigma));
     }
 

@@ -137,7 +137,7 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         net.add(new Hidden(INPUT_SIZE, 256, "l1", seeds.nextLong()));
         net.add(new BatchNorm(256, "bn1"));   // <- BatchNorm stabilizes training
         net.add(new Relu());
-        net.add(new Dropout(0.15f, seeds.nextLong()));           // <- fixed Dropout
+        net.add(new Dropout(0.15f, "drop1", seeds.nextLong()));           // <- fixed Dropout
 
         // --- Layer 2: residual block (skip connection) ----------------------
         net.add(new ResidualBranch(            // <- ResidualBranch
@@ -145,7 +145,7 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
                 new BatchNorm(256, "bn2"),
                 new Relu()
         ));
-        net.add(new Dropout(0.10f, seeds.nextLong()));
+        net.add(new Dropout(0.10f, "drop2", seeds.nextLong()));
 
         // --- Output layer ---------------------------------------------------
         net.add(new Hidden(256, NUM_LABELS, "out", seeds.nextLong()));

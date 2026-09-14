@@ -15,6 +15,7 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
 import java.util.SplittableRandom;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -39,13 +40,19 @@ public class Dropout extends AbstractLayer {
     /** Owned by this layer, so two Dropout layers never interfere. */
     private final SplittableRandom rng;
 
+    /** Names the bundle entry of this layer; without a name it has none. */
+    private final String name;
+
+    /** How far {@link #rng} has been drawn, which is the whole of the resumable state. */
+    private long drawn;
+
     /**
      * Creates a Dropout layer with an unseeded mask sequence.
      *
      * @param dropoutRate fraction of the activations to zero out
      */
     public Dropout(float dropoutRate) {
-        this(dropoutRate, ThreadLocalRandom.current().nextLong());
+        this(dropoutRate, null, ThreadLocalRandom.current().nextLong());
     }
 
     /**
@@ -56,9 +63,52 @@ public class Dropout extends AbstractLayer {
      * @param seed        seed for the mask sequence
      */
     public Dropout(float dropoutRate, long seed) {
+        this(dropoutRate, null, seed);
+    }
+
+    /**
+     * A named layer takes its place in the bundle of its network, which is what lets a
+     * continued run draw the same masks the interrupted one would have drawn next.
+     *
+     * @param dropoutRate fraction of the activations to zero out
+     * @param name        names the bundle entry of this layer
+     * @param seed        seed for the mask sequence
+     */
+    public Dropout(float dropoutRate, String name, long seed) {
         this.dropoutRate = dropoutRate;
         this.scalingFactor = 1.0f / (1.0f - dropoutRate);
+        this.name = name;
         this.rng = new SplittableRandom(seed);
+    }
+
+    /**
+     * The one place a value leaves {@link #rng}, so that the forward pass and the
+     * replay below cannot draw differently.
+     */
+    private long nextSeed() {
+        ++drawn;
+        return rng.nextLong();
+    }
+
+    @Override
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.writeLong(sink, name + "/draws", drawn);
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        long target = ParameterStore.readLong(source, name + "/draws");
+        if (target < drawn) {
+            throw new IllegalStateException(
+                    name + " has drawn " + drawn + " masks and the bundle stops at " + target);
+        }
+        // a mask sequence only runs forwards: drawing it down is the same as seeding a
+        // fresh generator and replaying, and it keeps the generator final
+        while (drawn < target) {
+            nextSeed();
+        }
     }
 
     /** Answers from the rate, not from the mode, so it is stable before training starts. */
@@ -81,7 +131,7 @@ public class Dropout extends AbstractLayer {
         // One pass instead of three. The draw, the threshold and the masking all walk
         // the same j x m elements, and going through an FFunction to threshold is what
         // puts this layer on the shared, megamorphic map call site.
-        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f, rng.nextLong());
+        mask = Matrices.randomUniformF(input.numRows(), input.numColumns(), 0.0f, 1.0f, nextSeed());
         float[] m = mask.getArrayUnsafe();
         float[] x = input.getArrayUnsafe();
         for (int i = 0; i < m.length; ++i) {
