@@ -15,6 +15,7 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
 import java.util.List;
 
 import net.jamu.matrix.MatrixF;
@@ -70,7 +71,7 @@ public interface Layer {
     /**
      * The trainable parameters of this layer, for an {@link Optimizer} to update.
      * Composite layers concatenate those of their sub-layers, without removing
-     * duplicates, exactly as {@link #storeParameters()} visits them.
+     * duplicates, exactly as {@link #writeParameters} visits them.
      *
      * @return the parameters, empty by default
      */
@@ -79,12 +80,25 @@ public interface Layer {
     }
 
     /**
-     * Persists the trainable parameters of this layer (e.g. weights and biases).
-     * The default implementation is a no-op; layers with storable parameters
-     * should override this method. Composite layers (e.g.
-     * {@link ParallelBranches}) should delegate to all their sub-layers.
+     * Writes the persistent state of this layer into {@code sink}, one entry per
+     * matrix, keyed by the layer name. A layer without a name writes nothing.
+     * Composite layers delegate to all their sub-layers.
+     *
+     * @param sink where the entries go
+     * @throws IOException if writing fails
      */
-    default void storeParameters() {
+    default void writeParameters(ParameterSink sink) throws IOException {
+        // no-op by default
+    }
+
+    /**
+     * Reads back what {@link #writeParameters(ParameterSink)} wrote, into the
+     * matrices this layer already holds.
+     *
+     * @param source where the entries come from
+     * @throws IOException if reading fails
+     */
+    default void readParameters(ParameterSource source) throws IOException {
         // no-op by default
     }
 }

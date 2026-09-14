@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
+
 /**
  * Applies the gradients a backward pass produced to the parameters that produced
  * them. The network registers every parameter once and calls {@link #step()} after
@@ -34,11 +36,24 @@ public interface Optimizer {
     void step();
 
     /**
-     * Writes whatever this optimizer would need to continue the run in another process, if it
-     * was told where to put it. The default does nothing, because not every optimizer has any
-     * state and none has to be persisted.
+     * Writes whatever this optimizer would need to continue into {@code sink}.
+     *
+     * @param sink where the entry goes
+     * @throws IOException if writing fails
      */
-    default void storeState() {
-        // nothing that outlives the process by default
+    default void writeTo(ParameterSink sink) throws IOException {
+        // no-op by default
+    }
+
+    /**
+     * Reads back what {@link #writeTo(ParameterSink)} wrote and continues at
+     * {@code step}, which the bundle holds once for the whole network.
+     *
+     * @param source where the entry comes from
+     * @param step   the step every parameter in the bundle comes from
+     * @throws IOException if reading fails
+     */
+    default void readFrom(ParameterSource source, int step) throws IOException {
+        // no-op by default
     }
 }

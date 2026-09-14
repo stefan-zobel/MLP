@@ -71,6 +71,9 @@ public class EMNIST_ConvNetwork3 extends AbstractNetwork {
         long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
         int epochs = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_EPOCHS;
         float peakRate = args.length > 2 ? Float.parseFloat(args[2]) : DEFAULT_PEAK_RATE;
+        // continue a run that was stopped: the bundle comes from ./data/, and the epochs
+        // argument stays the whole plan so the schedule keeps the length it was built with
+        boolean resume = args.length > 3 && Integer.parseInt(args[3]) != 0;
 
         SplittableRandom seeds = new SplittableRandom(baseSeed);
         EMNIST_ConvNetwork3 net = new EMNIST_ConvNetwork3();
@@ -80,24 +83,24 @@ public class EMNIST_ConvNetwork3 extends AbstractNetwork {
 
         String prefix = "c3_";
         net.add(new Unflatten(1, IMAGE_SIZE, IMAGE_SIZE));
-        net.add(new Conv2D(1, 32, 28, 28, 3, 1, 1, prefix + "conv1", false, true, Init.HE, seeds.nextLong()));
-        net.add(new BatchNorm(32, prefix + "norm1", false, true));
+        net.add(new Conv2D(1, 32, 28, 28, 3, 1, 1, prefix + "conv1", Init.HE, seeds.nextLong()));
+        net.add(new BatchNorm(32, prefix + "norm1"));
         net.add(new MaxPool2D(32, 28, 28, 2));
         net.add(new Relu());
-        net.add(new Conv2D(32, 64, 14, 14, 3, 1, 1, prefix + "conv2", false, true, Init.HE, seeds.nextLong()));
-        net.add(new BatchNorm(64, prefix + "norm2", false, true));
+        net.add(new Conv2D(32, 64, 14, 14, 3, 1, 1, prefix + "conv2", Init.HE, seeds.nextLong()));
+        net.add(new BatchNorm(64, prefix + "norm2"));
         net.add(new MaxPool2D(64, 14, 14, 2));
         net.add(new Relu());
-        net.add(new Conv2D(64, 128, 7, 7, 3, 1, 1, prefix + "conv3", false, true, Init.HE, seeds.nextLong()));
-        net.add(new BatchNorm(128, prefix + "norm3", false, true));
+        net.add(new Conv2D(64, 128, 7, 7, 3, 1, 1, prefix + "conv3", Init.HE, seeds.nextLong()));
+        net.add(new BatchNorm(128, prefix + "norm3"));
         // 7 does not halve: (7 - 2) / 2 + 1 leaves 3x3 and drops the last row and column
         net.add(new MaxPool2D(128, 7, 7, 2));
         net.add(new Relu());
         net.add(new Flatten(128, 3, 3));
-        net.add(new Hidden(128 * 3 * 3, 128, prefix + "dense", false, true, Init.HE, seeds.nextLong()));
-        net.add(new BatchNorm(128, prefix + "norm4", false, true));
+        net.add(new Hidden(128 * 3 * 3, 128, prefix + "dense", Init.HE, seeds.nextLong()));
+        net.add(new BatchNorm(128, prefix + "norm4"));
         net.add(new Relu());
-        net.add(new Hidden(128, NUM_LABELS, prefix + "out", false, true, seeds.nextLong()));
+        net.add(new Hidden(128, NUM_LABELS, prefix + "out", seeds.nextLong()));
         // no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
@@ -118,9 +121,19 @@ public class EMNIST_ConvNetwork3 extends AbstractNetwork {
 
         double maxValidationAccuracy = 0.0;
         int bestEpoch = -1;
+        int firstEpoch = 0;
+        if (resume) {
+            firstEpoch = net.resume("c3", batchesPerEpoch);
+            // what keep-best has to beat is the bundle that was just loaded, and its score is
+            // only known by measuring it; from zero the next epoch would store whatever it scored
+            maxValidationAccuracy = net.validationAccuracy();
+            bestEpoch = firstEpoch - 1;
+            System.out.printf("resuming at epoch %d, checkpoint accuracy %.6f%n", firstEpoch,
+                    maxValidationAccuracy);
+        }
         long t0 = System.nanoTime();
 
-        for (int epoch = 0; epoch < epochs; ++epoch) {
+        for (int epoch = firstEpoch; epoch < epochs; ++epoch) {
             long e0 = System.nanoTime();
             for (int pass = 0; pass < PASSES_PER_EPOCH; ++pass) {
                 data.regenerate(passes);
@@ -137,7 +150,7 @@ public class EMNIST_ConvNetwork3 extends AbstractNetwork {
             if (validationAccuracy > maxValidationAccuracy) {
                 maxValidationAccuracy = validationAccuracy;
                 bestEpoch = epoch;
-                net.storeParameters();
+                net.storeParameters("c3");
             }
             System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
                     + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "

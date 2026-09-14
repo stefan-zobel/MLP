@@ -15,14 +15,7 @@
  */
 package math.ml.mlp;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.List;
 
 import net.jamu.matrix.Matrices;
@@ -50,8 +43,8 @@ public class LayerNorm extends AbstractLayer {
 
     private final int features;
     private final float eps;
+    /** Names the bundle entries of this layer; without a name it has none. */
     private final String name;
-    private final boolean storeParameters;
 
     // Learnable parameters (features x 1); each carries its own gradient buffer
     private final Parameter gamma;
@@ -70,7 +63,7 @@ public class LayerNorm extends AbstractLayer {
      * @param features number of input features (= number of rows of the input)
      */
     public LayerNorm(int features) {
-        this(features, 1e-5f, null, false, false);
+        this(features, 1e-5f, null);
     }
 
     /**
@@ -80,48 +73,34 @@ public class LayerNorm extends AbstractLayer {
      * @param eps      small constant added to the variance for numerical stability
      */
     public LayerNorm(int features, float eps) {
-        this(features, eps, null, false, false);
+        this(features, eps, null);
     }
 
     /**
-     * Creates a LayerNorm layer that can persist its parameters, mirroring the
-     * {@link Hidden} and {@link BatchNorm} constructors.
+     * Creates a LayerNorm layer that takes part in the bundle of its network.
      *
      * @param features number of input features
-     * @param name     identifies the checkpoint file {@code ln_<name>}
-     * @param load     read the parameters from {@code ./data/} at construction
-     * @param store    let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param name     names the bundle entries of this layer
      */
-    public LayerNorm(int features, String name, boolean load, boolean store) {
-        this(features, 1e-5f, name, load, store);
+    public LayerNorm(int features, String name) {
+        this(features, 1e-5f, name);
     }
 
     /**
-     * Creates a persisting LayerNorm layer with an explicit epsilon.
+     * Creates a named LayerNorm layer with an explicit epsilon.
      *
      * @param features number of input features
      * @param eps      small constant added to the variance for numerical stability
-     * @param name     identifies the checkpoint file {@code ln_<name>}
-     * @param load     read the parameters from {@code ./data/} at construction
-     * @param store    let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param name     names the bundle entries of this layer
      */
-    public LayerNorm(int features, float eps, String name, boolean load, boolean store) {
+    public LayerNorm(int features, float eps, String name) {
         this.features = features;
         this.eps = eps;
         this.name = name;
-        this.storeParameters = store;
 
         // neither the scale nor the shift is weight decayed
         gamma = new Parameter("gamma", Matrices.onesF(features, 1), false);
         beta = new Parameter("beta", Matrices.createF(features, 1), false);
-
-        if (load) {
-            try (FileInputStream fis = new FileInputStream(ParameterStore.LOAD_DIR + "ln_" + name)) {
-                readParameters(fis);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
     }
 
     /** The scale and the shift. */
@@ -328,44 +307,17 @@ public class LayerNorm extends AbstractLayer {
         }
     }
 
-    /**
-     * Writes gamma and beta to {@code os} in that order.
-     *
-     * @param os the stream to write into; the caller closes it
-     * @throws IOException if writing fails
-     */
-    void writeParameters(OutputStream os) throws IOException {
-        Matrices.serializeF(gamma.value(), os);
-        Matrices.serializeF(beta.value(), os);
-    }
-
-    /**
-     * Reads gamma and beta back in the order {@link #writeParameters(OutputStream)}
-     * wrote them.
-     *
-     * @param is the stream to read from; the caller closes it
-     * @throws IOException if reading fails
-     */
-    void readParameters(InputStream is) throws IOException {
-        gamma.value().setInplace(Matrices.deserializeF(is));
-        beta.value().setInplace(Matrices.deserializeF(is));
-    }
-
-    /**
-     * Persists gamma and beta if this layer was constructed with storing enabled.
-     */
     @Override
-    public void storeParameters() {
-        if (!storeParameters) {
-            return;
-        }
-        try {
-            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
-            try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "ln_" + name)) {
-                writeParameters(fos);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.write(sink, name + "/gamma", gamma.value());
+        ParameterStore.write(sink, name + "/beta", beta.value());
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.read(source, name + "/gamma", gamma.value());
+        ParameterStore.read(source, name + "/beta", beta.value());
     }
 }

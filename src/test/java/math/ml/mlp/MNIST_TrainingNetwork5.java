@@ -83,6 +83,8 @@ public class MNIST_TrainingNetwork5 extends AbstractNetwork {
     public static void main(String[] args) {
         // pass this seed back as the first argument to repeat a run exactly
         long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        // continue a run that was stopped; the bundle comes from ./data/
+        boolean resume = args.length > 1 && Integer.parseInt(args[1]) != 0;
         System.out.println("seed: " + baseSeed);
         SplittableRandom seeds = new SplittableRandom(baseSeed);
 
@@ -94,16 +96,16 @@ public class MNIST_TrainingNetwork5 extends AbstractNetwork {
         // The names carry a prefix of their own: the other training networks store under
         // layer1 to layer4 and under t3_ and t4_, and sharing any of them would overwrite.
         // He ahead of every ReLU, Glorot on the output layer, which feeds the loss directly.
-        net.add(new Hidden(INPUT_SIZE, 512, "t5_layer1", false, true, Init.HE, seeds.nextLong()));
-        net.add(new BatchNorm(512, "t5_norm1", false, true));
+        net.add(new Hidden(INPUT_SIZE, 512, "t5_layer1", Init.HE, seeds.nextLong()));
+        net.add(new BatchNorm(512, "t5_norm1"));
         net.add(new Relu());
         // no dropout: on the 180_000-column variant it was worth +0.01 points over three
         // seeds, inside the noise, and cost 18 % of the epoch -- against data that never
         // repeats there is less left for it to do than ever
-        net.add(new Hidden(512, 256, "t5_layer2", false, true, Init.HE, seeds.nextLong()));
-        net.add(new BatchNorm(256, "t5_norm2", false, true));
+        net.add(new Hidden(512, 256, "t5_layer2", Init.HE, seeds.nextLong()));
+        net.add(new BatchNorm(256, "t5_norm2"));
         net.add(new Relu());
-        net.add(new Hidden(256, NUM_LABELS, "t5_out", false, true, seeds.nextLong()));
+        net.add(new Hidden(256, NUM_LABELS, "t5_out", seeds.nextLong()));
         // no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
@@ -117,8 +119,17 @@ public class MNIST_TrainingNetwork5 extends AbstractNetwork {
         SplittableRandom passes = seeds.split();
 
         double maxValidationAccuracy = 0.0;
+        int firstEpoch = 0;
+        if (resume) {
+            firstEpoch = net.resume("mnist_tn5", NUM_BATCHES_PER_EPOCH);
+            // what keep-best has to beat is the bundle that was just loaded, and its score is
+            // only known by measuring it; from zero the next epoch would store whatever it scored
+            maxValidationAccuracy = net.validationAccuracy();
+            System.out.printf("resuming at epoch %d, checkpoint accuracy %.6f%n", firstEpoch,
+                    maxValidationAccuracy);
+        }
 
-        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+        for (int epochIdx = firstEpoch; epochIdx < NUM_EPOCHS; ++epochIdx) {
             for (int pass = 0; pass < PASSES_PER_EPOCH; ++pass) {
                 // a new order and a newly drawn distortion for every image; this replaces
                 // the reshuffle the stored sets needed between epochs
@@ -136,7 +147,7 @@ public class MNIST_TrainingNetwork5 extends AbstractNetwork {
             // keep-best: only the improved model reaches the disk
             if (validationAccuracy > maxValidationAccuracy) {
                 maxValidationAccuracy = validationAccuracy;
-                net.storeParameters();
+                net.storeParameters("mnist_tn5");
             }
             System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
                     + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "

@@ -15,14 +15,7 @@
  */
 package math.ml.mlp;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.List;
 
 import net.jamu.matrix.Matrices;
@@ -66,8 +59,8 @@ import net.jamu.matrix.MatrixF;
 public class BatchNorm extends AbstractLayer {
 
     private final int     features;
+    /** Names the bundle entries of this layer; without a name it has none. */
     private final String  name;
-    private final boolean storeParameters;
     private final float   eps;
     /** Weight for new batch statistics in the running-average update. */
     private final float   momentum;
@@ -112,38 +105,32 @@ public class BatchNorm extends AbstractLayer {
      *                 weight {@code (1 - momentum)}; typical value: {@code 0.1f}
      */
     public BatchNorm(int features, float eps, float momentum) {
-        this(features, eps, momentum, null, false, false);
+        this(features, eps, momentum, null);
     }
 
     /**
-     * Creates a BatchNorm layer that can persist its parameters, mirroring the
-     * {@link Hidden} constructor.
+     * Creates a BatchNorm layer that takes part in the bundle of its network.
      *
      * @param features number of input features
-     * @param name     identifies the checkpoint file {@code bn_<name>}
-     * @param load     read the parameters from {@code ./data/} at construction
-     * @param store    let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param name     names the bundle entries of this layer
      */
-    public BatchNorm(int features, String name, boolean load, boolean store) {
-        this(features, 1e-5f, 0.1f, name, load, store);
+    public BatchNorm(int features, String name) {
+        this(features, 1e-5f, 0.1f, name);
     }
 
     /**
-     * Creates a persisting BatchNorm layer with explicit numerical parameters.
+     * Creates a named BatchNorm layer with explicit numerical parameters.
      *
      * @param features number of input features
      * @param eps      small constant added to the variance for numerical stability
      * @param momentum weight applied to the new batch statistics
-     * @param name     identifies the checkpoint file {@code bn_<name>}
-     * @param load     read the parameters from {@code ./data/} at construction
-     * @param store    let {@link #storeParameters()} write to {@code ./checkpoints/}
+     * @param name     names the bundle entries of this layer
      */
-    public BatchNorm(int features, float eps, float momentum, String name, boolean load, boolean store) {
+    public BatchNorm(int features, float eps, float momentum, String name) {
         this.features = features;
         this.eps      = eps;
         this.momentum = momentum;
         this.name     = name;
-        this.storeParameters = store;
 
         // gamma = 1, runningVar = 1; beta and runningMean stay 0. Neither gamma nor beta
         // is weight decayed, the same rule every framework follows for a scale and shift.
@@ -155,61 +142,26 @@ public class BatchNorm extends AbstractLayer {
         batchMean   = Matrices.createF(features, 1);
         batchVar    = Matrices.createF(features, 1);
         invStd      = Matrices.createF(features, 1);
-
-        if (load) {
-            try (FileInputStream fis = new FileInputStream(ParameterStore.LOAD_DIR + "bn_" + name)) {
-                readParameters(fis);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
     }
 
-    /**
-     * Writes gamma, beta, runningMean and runningVar to {@code os} in that
-     * order. All four belong together, so they share one file.
-     *
-     * @param os the stream to write into; the caller closes it
-     * @throws IOException if writing fails
-     */
-    void writeParameters(OutputStream os) throws IOException {
-        Matrices.serializeF(gamma.value(), os);
-        Matrices.serializeF(beta.value(), os);
-        Matrices.serializeF(runningMean, os);
-        Matrices.serializeF(runningVar, os);
-    }
-
-    /**
-     * Reads the four parameter matrices back in the order
-     * {@link #writeParameters(OutputStream)} wrote them.
-     *
-     * @param is the stream to read from; the caller closes it
-     * @throws IOException if reading fails
-     */
-    void readParameters(InputStream is) throws IOException {
-        gamma.value().setInplace(Matrices.deserializeF(is));
-        beta.value().setInplace(Matrices.deserializeF(is));
-        runningMean.setInplace(Matrices.deserializeF(is));
-        runningVar.setInplace(Matrices.deserializeF(is));
-    }
-
-    /**
-     * Persists all four parameter matrices if this layer was constructed with
-     * storing enabled.
-     */
     @Override
-    public void storeParameters() {
-        if (!storeParameters) {
-            return;
-        }
-        try {
-            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
-            try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "bn_" + name)) {
-                writeParameters(fos);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.write(sink, name + "/gamma", gamma.value());
+        ParameterStore.write(sink, name + "/beta", beta.value());
+        // the running statistics are not trained and are not in parameters(), and a net
+        // that got them back as zero and one would infer from unnormalized activations
+        ParameterStore.write(sink, name + "/runningMean", runningMean);
+        ParameterStore.write(sink, name + "/runningVar", runningVar);
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.read(source, name + "/gamma", gamma.value());
+        ParameterStore.read(source, name + "/beta", beta.value());
+        ParameterStore.read(source, name + "/runningMean", runningMean);
+        ParameterStore.read(source, name + "/runningVar", runningVar);
     }
 
     // -------------------------------------------------------------------------

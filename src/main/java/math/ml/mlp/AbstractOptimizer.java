@@ -20,21 +20,12 @@ import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /** Holds the parameter list, the step counter and the schedule of an optimizer. */
 public abstract class AbstractOptimizer implements Optimizer {
-
-    // "OPT1", so a file that is not one of these is refused instead of read as garbage
-    private static final int MAGIC = 0x4F505431;
-    private static final int FORMAT_VERSION = 1;
 
     /** The registered parameters, in registration order. */
     protected final List<Parameter> parameters = new ArrayList<>();
@@ -47,10 +38,6 @@ public abstract class AbstractOptimizer implements Optimizer {
     private double maxGradNorm = Double.POSITIVE_INFINITY;
     private double lastNorm;
     private int clippedSteps;
-
-    /** Names the state file, or null while this optimizer is not persisted at all. */
-    private String stateName;
-    private boolean storing;
 
     /**
      * For subclasses.
@@ -216,108 +203,64 @@ public abstract class AbstractOptimizer implements Optimizer {
     // State that outlives the process
     // -------------------------------------------------------------------------
 
-    /**
-     * Names the file {@code o_<name>} this optimizer's state is read from and written to,
-     * under the same two directories the layers use.
-     *
-     * @param name  identifies the state file
-     * @param store let {@link #storeState()} write it, as a layer's flag does
-     * @return this optimizer
-     */
-    public final AbstractOptimizer persistAs(String name, boolean store) {
-        this.stateName = Objects.requireNonNull(name, "name");
-        this.storing = store;
-        return this;
-    }
+    /** The entry an optimizer writes its state into; a network has one optimizer. */
+    static final String ENTRY = "optimizer";
 
     /**
-     * Writes the step counter and whatever per-parameter state the subclass keeps, if a name
-     * and the store flag were given. Called by the network along with the layers, so that the
-     * weights and this file cannot come from different steps.
+     * Writes the kind, the counters and whatever per-parameter state the subclass keeps into
+     * one bundle entry. The step is not among them: the bundle carries it once for the whole
+     * network, which is what makes the weights and this entry provably the same age.
+     *
+     * @param sink where the entry goes
+     * @throws IOException if writing fails
      */
     @Override
-    public final void storeState() {
-        if (stateName == null || !storing) {
-            return;
-        }
-        Path dir = Paths.get(ParameterStore.STORE_DIR);
-        Path target = dir.resolve("o_" + stateName);
-        Path tmp = dir.resolve("o_" + stateName + ".tmp");
-        try {
-            Files.createDirectories(dir);
-            try (DataOutputStream out = new DataOutputStream(
-                    new BufferedOutputStream(Files.newOutputStream(tmp)))) {
-                out.writeInt(MAGIC);
-                out.writeInt(FORMAT_VERSION);
-                out.writeUTF(kind());
-                out.writeInt(step);
-                out.writeInt(clippedSteps);
-                out.writeDouble(lastNorm);
-                out.writeInt(parameters.size());
-                for (Parameter p : parameters) {
-                    out.writeInt(p.value().getArrayUnsafe().length);
-                }
-                writeState(out);
+    public final void writeTo(ParameterSink sink) throws IOException {
+        try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(sink.open(ENTRY)))) {
+            out.writeUTF(kind());
+            out.writeInt(clippedSteps);
+            out.writeDouble(lastNorm);
+            out.writeInt(parameters.size());
+            for (Parameter p : parameters) {
+                out.writeInt(p.value().getArrayUnsafe().length);
             }
-            // so this one file is never half written; it does not make the set of layer
-            // files atomic, which needs a format that holds a whole network
-            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            writeState(out);
         }
     }
 
     /**
-     * Reads back what {@link #storeState()} wrote. Not on {@link Optimizer} and deliberately
-     * not symmetric with its counterpart: the subclass state is sized from the registered
-     * parameters, so this can only run once the network is complete, and an explicit call by
-     * the program is the one place where that ordering is visible.
+     * Reads the state back and continues at {@code step}. Belongs after the network is built,
+     * because the per-parameter arrays are sized from the registered parameters.
      *
-     * @return the step the run continues at, for the caller to log
-     * @throws IllegalStateException if there is no name, no file, or the file does not describe
-     *                               this optimizer and these parameters
+     * @param source where the entry comes from
+     * @param step   the step every parameter in the bundle comes from
+     * @throws IOException if reading fails
      */
-    public final int loadState() {
-        if (stateName == null) {
-            throw new IllegalStateException("persistAs(...) has to name the state before it can be read");
-        }
-        Path source = Paths.get(ParameterStore.LOAD_DIR).resolve("o_" + stateName);
-        if (!Files.isReadable(source)) {
-            throw new IllegalStateException("no optimizer state at " + source);
-        }
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(source)))) {
-            if (in.readInt() != MAGIC) {
-                throw new IllegalStateException(source + " is not an optimizer state");
-            }
-            int version = in.readInt();
-            if (version != FORMAT_VERSION) {
-                throw new IllegalStateException(source + " is format " + version + ", this is " + FORMAT_VERSION);
-            }
+    @Override
+    public final void readFrom(ParameterSource source, int step) throws IOException {
+        try (DataInputStream in = new DataInputStream(new BufferedInputStream(source.open(ENTRY)))) {
             String written = in.readUTF();
             if (!kind().equals(written)) {
-                throw new IllegalStateException(source + " was written by " + written + ", this is " + kind());
+                throw new IllegalStateException("the state was written by " + written + ", this is " + kind());
             }
-            int loadedStep = in.readInt();
             int loadedClipped = in.readInt();
             double loadedNorm = in.readDouble();
-            checkShapes(in, source);
+            checkShapes(in, ENTRY);
             readState(in);
-            step = loadedStep;
-            clippedSteps = loadedClipped;
-            lastNorm = loadedNorm;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            // only now, so that a refused load leaves the counters where they were
+            this.step = step;
+            this.clippedSteps = loadedClipped;
+            this.lastNorm = loadedNorm;
         }
-        return step;
     }
 
     // Every silent way to resume into the wrong network ends here: one parameter more, one
     // layer wider, the same layers registered in another order.
-    private void checkShapes(DataInputStream in, Path source) throws IOException {
+    private void checkShapes(DataInputStream in, Object source) throws IOException {
         int count = in.readInt();
         if (count != parameters.size()) {
             throw new IllegalStateException(source + " holds " + count + " parameters and this optimizer has "
-                    + parameters.size() + "; loadState() belongs after the network is built");
+                    + parameters.size() + "; loading belongs after the network is built");
         }
         for (int i = 0; i < count; ++i) {
             int length = in.readInt();

@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -51,8 +53,8 @@ import net.jamu.matrix.MatrixF;
  * branch, so the outer training loop does not need to be aware of the
  * branching structure.
  *
- * <p><b>Parameter persistence:</b> {@link #storeParameters} is overridden to
- * delegate to all sub-layers in all branches.
+ * <p><b>Parameter persistence:</b> {@link #writeParameters} and {@link #readParameters}
+ * are overridden to delegate to all sub-layers in all branches.
  *
  * <h2>Example usage in a variational autoencoder</h2>
  * <pre>{@code
@@ -155,10 +157,19 @@ public class ParallelBranches extends AbstractLayer {
      * Delegates parameter persistence to every layer in every branch.
      */
     @Override
-    public void storeParameters() {
+    public void writeParameters(ParameterSink sink) throws IOException {
         for (List<Layer> branch : branches) {
             for (Layer layer : branch) {
-                layer.storeParameters();
+                layer.writeParameters(sink);
+            }
+        }
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        for (List<Layer> branch : branches) {
+            for (Layer layer : branch) {
+                layer.readParameters(source);
             }
         }
     }

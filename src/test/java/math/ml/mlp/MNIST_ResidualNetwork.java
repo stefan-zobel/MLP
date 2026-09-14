@@ -121,6 +121,8 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
 
         // pass this seed back as the first argument to repeat a run exactly
         long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        // continue a run that was stopped; the bundle comes from ./data/
+        boolean resume = args.length > 1 && Integer.parseInt(args[1]) != 0;
         System.out.println("seed: " + baseSeed);
         SplittableRandom seeds = new SplittableRandom(baseSeed);
 
@@ -132,21 +134,21 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         loss.registerAccuracyCallback(net::onAccuracyComputationCompleted);
 
         // --- Layer 1: linear + BN + ReLU + Dropout --------------------------
-        net.add(new Hidden(INPUT_SIZE, 256, "l1", false, true, seeds.nextLong()));
-        net.add(new BatchNorm(256, "bn1", false, true));   // <- BatchNorm stabilizes training
+        net.add(new Hidden(INPUT_SIZE, 256, "l1", seeds.nextLong()));
+        net.add(new BatchNorm(256, "bn1"));   // <- BatchNorm stabilizes training
         net.add(new Relu());
         net.add(new Dropout(0.15f, seeds.nextLong()));           // <- fixed Dropout
 
         // --- Layer 2: residual block (skip connection) ----------------------
         net.add(new ResidualBranch(            // <- ResidualBranch
-                new Hidden(256, 256, "res1", false, true, seeds.nextLong()),
-                new BatchNorm(256, "bn2", false, true),
+                new Hidden(256, 256, "res1", seeds.nextLong()),
+                new BatchNorm(256, "bn2"),
                 new Relu()
         ));
         net.add(new Dropout(0.10f, seeds.nextLong()));
 
         // --- Output layer ---------------------------------------------------
-        net.add(new Hidden(256, NUM_LABELS, "out", false, true, seeds.nextLong()));
+        net.add(new Hidden(256, NUM_LABELS, "out", seeds.nextLong()));
         net.add(loss);
 
         // -----------------------------------------------------------------------
@@ -160,8 +162,17 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
         double maxValidationAccuracy = 0.0;
+        int firstEpoch = 0;
+        if (resume) {
+            firstEpoch = net.resume("mnist_residual", NUM_BATCHES_PER_EPOCH);
+            // what keep-best has to beat is the bundle that was just loaded, and its score is
+            // only known by measuring it; from zero the next epoch would store whatever it scored
+            maxValidationAccuracy = net.validationAccuracy();
+            System.out.printf("resuming at epoch %d, checkpoint accuracy %.6f%n", firstEpoch,
+                    maxValidationAccuracy);
+        }
 
-        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+        for (int epochIdx = firstEpoch; epochIdx < NUM_EPOCHS; ++epochIdx) {
             for (int b = 0; b < NUM_BATCHES_PER_EPOCH; ++b) {
                 int startCol = b * BATCH_SIZE;
                 MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
@@ -175,7 +186,7 @@ public class MNIST_ResidualNetwork extends AbstractNetwork {
             // keep-best: only the improved model reaches the disk
             if (validationAccuracy > maxValidationAccuracy) {
                 maxValidationAccuracy = validationAccuracy;
-                net.storeParameters();
+                net.storeParameters("mnist_residual");
             }
 
             System.out.println("epoch " + epoch

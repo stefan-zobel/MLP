@@ -119,6 +119,8 @@ public class MNIST_VAE extends AbstractNetwork {
 
         // pass this seed back as the first argument to repeat a run exactly
         long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        // continue a run that was stopped; the bundle comes from ./data/
+        boolean resume = args.length > 1 && Integer.parseInt(args[1]) != 0;
         System.out.println("seed: " + baseSeed);
         SplittableRandom seeds = new SplittableRandom(baseSeed);
 
@@ -130,10 +132,10 @@ public class MNIST_VAE extends AbstractNetwork {
 
         // --- Encoder ------------------------------------------------------
         net.add(new Hidden(INPUT_DIM, 256, "enc1", seeds.nextLong()));
-        net.add(new LayerNorm(256));
+        net.add(new LayerNorm(256, "enc1_ln"));
         net.add(new Relu());
         net.add(new Hidden(256, 128, "enc2", seeds.nextLong()));
-        net.add(new LayerNorm(128));
+        net.add(new LayerNorm(128, "enc2_ln"));
         net.add(new Relu());
 
         // --- Split: mu and log sigma^2 heads ------------------------------
@@ -147,10 +149,10 @@ public class MNIST_VAE extends AbstractNetwork {
 
         // --- Decoder ------------------------------------------------------
         net.add(new Hidden(LATENT_DIM, 128, "dec1", seeds.nextLong()));
-        net.add(new LayerNorm(128));
+        net.add(new LayerNorm(128, "dec1_ln"));
         net.add(new Relu());
         net.add(new Hidden(128, 256, "dec2", seeds.nextLong()));
-        net.add(new LayerNorm(256));
+        net.add(new LayerNorm(256, "dec2_ln"));
         net.add(new Relu());
         net.add(new Hidden(256, INPUT_DIM, "dec3", seeds.nextLong()));
 
@@ -183,7 +185,22 @@ public class MNIST_VAE extends AbstractNetwork {
         Statistics.shuffleColumnsInplace(IMAGES, seed);
         // TARGETS == IMAGES, so it is already shuffled in sync.
 
-        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+        // lower is better here, so keep-best runs the other way round from the classifiers
+        double minHeldOutBCE = Double.POSITIVE_INFINITY;
+        int bestEpoch = -1;
+        int firstEpoch = 0;
+        if (resume) {
+            firstEpoch = net.resume("vae", NUM_BATCHES_PER_EPOCH);
+            epoch = firstEpoch;
+            bestEpoch = firstEpoch - 1;
+            // the same rule as everywhere else, read the other way round: what the loaded
+            // bundle already reconstructs is what the next epoch has to beat, and rounded the
+            // way the loop rounds so the two numbers are comparable
+            minHeldOutBCE = Arithmetic.round(net.reconstructionLoss(heldOut), 6);
+            System.out.println("resuming at epoch " + firstEpoch + ", checkpoint held-out BCE " + minHeldOutBCE);
+        }
+
+        for (int epochIdx = firstEpoch; epochIdx < NUM_EPOCHS; ++epochIdx) {
             for (int b = 0; b < NUM_BATCHES_PER_EPOCH; ++b) {
                 int startCol = b * BATCH_SIZE;
                 MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
@@ -201,6 +218,11 @@ public class MNIST_VAE extends AbstractNetwork {
             double heldOutBCE = Arithmetic.round(net.reconstructionLoss(heldOut), 6);
             System.out.println("epoch " + epoch + "  avg. training loss (per image): " + avgLoss
                     + "   reconstruction BCE (per pixel): held-in " + heldInBCE + "   held-out " + heldOutBCE);
+            if (heldOutBCE < minHeldOutBCE) {
+                minHeldOutBCE = heldOutBCE;
+                bestEpoch = epoch;
+                net.storeParameters("vae");
+            }
             ++epoch;
 
             // reshuffle between epochs
@@ -210,6 +232,8 @@ public class MNIST_VAE extends AbstractNetwork {
 
         System.out.println("\nfinal held-out reconstruction BCE on " + VAL_SIZE + " test images: "
                 + Arithmetic.round(net.reconstructionLoss(heldOut), 6));
+        // the bundle holds the best epoch, which is not necessarily this one
+        System.out.println("stored epoch " + bestEpoch + " at held-out BCE " + minHeldOutBCE);
     }
 
     // -----------------------------------------------------------------------

@@ -104,15 +104,13 @@ public class EMNIST_Transformer extends AbstractNetwork {
                 .blocks(BLOCKS)
                 .activation(Relu::new)
                 .names("vt_")
-                .load(resume)
-                .store(true)
                 .seed(baseSeed)
                 .build();
         int seqLen = encoder.sequenceLength();
         net.add(encoder);
         // the head belongs to the program, not to the encoder: what is classified, and into how
         // many classes, is not the encoder's business
-        net.add(new Hidden(encoder.features(), NUM_LABELS, "vt_out", resume, true, seeds.nextLong()));
+        net.add(new Hidden(encoder.features(), NUM_LABELS, "vt_out", seeds.nextLong()));
         // no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
@@ -132,17 +130,16 @@ public class EMNIST_Transformer extends AbstractNetwork {
         System.out.printf("weights=%d (tokens %d, attention %d, mlp %d, head %d)%n", all, tokens, attention, mlp,
                 head);
 
-        AbstractOptimizer adam = new Adam(
-                LearningRateSchedule.warmupThenCosine(totalSteps / 20, peakRate, totalSteps, peakRate / 100.0f), 0.0f)
-                        .persistAs("vt", true);
-        net.optimizer(adam);
+        net.optimizer(new Adam(
+                LearningRateSchedule.warmupThenCosine(totalSteps / 20, peakRate, totalSteps, peakRate / 100.0f),
+                0.0f));
 
         double maxValidationAccuracy = 0.0;
         int bestEpoch = -1;
         int firstEpoch = 0;
         if (resume) {
-            // after the registration, because the moments are sized from the parameters
-            int done = adam.loadState();
+            // after the whole network is built, because every matrix it fills has to exist
+            int done = net.loadParameters("vt");
             firstEpoch = done / batchesPerEpoch;
             bestEpoch = firstEpoch - 1;
             // what the keep-best rule has to beat is the promoted checkpoint, and after a resume
@@ -171,7 +168,7 @@ public class EMNIST_Transformer extends AbstractNetwork {
             if (validationAccuracy > maxValidationAccuracy) {
                 maxValidationAccuracy = validationAccuracy;
                 bestEpoch = epoch;
-                net.storeParameters();
+                net.storeParameters("vt");
             }
             System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
                     + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "
