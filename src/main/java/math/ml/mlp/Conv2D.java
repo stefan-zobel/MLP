@@ -304,7 +304,7 @@ public class Conv2D extends AbstractLayer {
 
     /** The inverse of {@link #im2col}, accumulating because neighboring patches overlap. */
     private void col2im(float[] src, float[] dst, int m) {
-        // Also parallel over samples, which is what keeps the accumulation safe: neighbouring
+        // Also parallel over samples, which is what keeps the accumulation safe: neighboring
         // patches overlap, so the order of the additions matters, but every element a sample
         // writes lies inside that sample's own region and its order there is unchanged.
         IntStream.range(0, m).parallel().forEach(s -> col2imSample(src, dst, s));

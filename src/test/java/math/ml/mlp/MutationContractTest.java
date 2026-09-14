@@ -62,8 +62,9 @@ class MutationContractTest {
 
     @Test
     void aCompositeAnswersForItsOwnArgumentsNotForItsBranch() {
-        // both composites allocate what they return, so a Dropout inside one of them
-        // is invisible from the outside -- the copy happens within
+        // neither composite writes into the matrices it is handed, so a Dropout inside one
+        // of them is invisible from the outside -- the defensive copy happens within. That is
+        // the reason, and not that they allocate what they return: ResidualBranch no longer does
         ResidualBranch residual = new ResidualBranch(new Dropout(0.3f, 3L));
         assertFalse(residual.mutatesInput());
         assertFalse(residual.mutatesGradients());
