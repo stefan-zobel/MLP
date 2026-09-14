@@ -32,4 +32,13 @@ public interface Optimizer {
 
     /** Applies one update to every registered parameter. */
     void step();
+
+    /**
+     * Writes whatever this optimizer would need to continue the run in another process, if it
+     * was told where to put it. The default does nothing, because not every optimizer has any
+     * state and none has to be persisted.
+     */
+    default void storeState() {
+        // nothing that outlives the process by default
+    }
 }

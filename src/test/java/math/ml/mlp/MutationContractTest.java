@@ -51,7 +51,8 @@ class MutationContractTest {
                 new BatchNorm(4), new LayerNorm(4), new VAEReparamLayer(2, 1.0f), new CrossEntropyLoss(),
                 new SoftmaxCrossEntropyLoss(), new BinaryCrossEntropyLoss(), new SigmoidBCELoss(),
                 new Conv2D(1, 2, 4, 4, 3, "mc2", 1L), new MaxPool2D(1, 4, 4, 2), new Flatten(1, 4, 4),
-                new Unflatten(1, 4, 4));
+                new Unflatten(1, 4, 4), new MeanPool(2), new PositionalEncoding(4, 2, "mc3", 2L),
+                new Attention(4, 2, 2, "mc4", 3L));
         for (Layer layer : layers) {
             String name = layer.getClass().getSimpleName();
             assertFalse(layer.mutatesInput(), name + " declares that it mutates its input");
@@ -61,8 +62,9 @@ class MutationContractTest {
 
     @Test
     void aCompositeAnswersForItsOwnArgumentsNotForItsBranch() {
-        // both composites allocate what they return, so a Dropout inside one of them
-        // is invisible from the outside -- the copy happens within
+        // neither composite writes into the matrices it is handed, so a Dropout inside one
+        // of them is invisible from the outside -- the defensive copy happens within. That is
+        // the reason, and not that they allocate what they return: ResidualBranch no longer does
         ResidualBranch residual = new ResidualBranch(new Dropout(0.3f, 3L));
         assertFalse(residual.mutatesInput());
         assertFalse(residual.mutatesGradients());

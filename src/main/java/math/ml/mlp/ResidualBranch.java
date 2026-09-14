@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.ListIterator;
 
+import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 /**
@@ -82,6 +83,16 @@ public class ResidualBranch extends AbstractLayer {
      */
     private final boolean copyInput;
     private final boolean copyGradients;
+
+    // Reused across steps rather than allocated per call: at a sequence length one addition is
+    // megabytes, and eight branches forward and backward were allocating more per epoch than
+    // they were adding. They have to be two buffers and not one -- a numerical gradient check
+    // holds the matrix backward returns while it calls forward hundreds of times.
+    private MatrixF output;
+    private MatrixF gradientsOut;
+    /** The shape the buffers were sized for, or -1 before the first pass. */
+    private int rows = -1;
+    private int columns = -1;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -180,8 +191,9 @@ public class ResidualBranch extends AbstractLayer {
                     + input.numRows() + "x" + input.numColumns() + ")");
         }
 
-        // y = x + F(x)
-        return input.plus(branchOut);
+        // y = x + F(x), into a buffer of this layer rather than a fresh matrix
+        ensureBuffers(input.numRows(), input.numColumns());
+        return input.add(branchOut, output);
     }
 
     /**
@@ -206,12 +218,23 @@ public class ResidualBranch extends AbstractLayer {
         }
 
         // dL/dx = grads (identity path) + branchGrads (transformation path)
-        return grads.plus(branchGrads);
+        ensureBuffers(grads.numRows(), grads.numColumns());
+        return grads.add(branchGrads, gradientsOut);
     }
 
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private void ensureBuffers(int r, int c) {
+        if (rows == r && columns == c) {
+            return;
+        }
+        output = Matrices.createF(r, c);
+        gradientsOut = Matrices.createF(r, c);
+        rows = r;
+        columns = c;
+    }
 
     /** Creates an independent element-by-element copy of {@code src}. */
     private static MatrixF copyOf(MatrixF src) {

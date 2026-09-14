@@ -142,7 +142,8 @@ public abstract class AbstractNetwork implements TrainableNetwork {
 
     /**
      * Persists the parameters of every layer that was constructed with storing
-     * enabled; layers without storable parameters do nothing.
+     * enabled, and the optimizer state when the optimizer was given a name; layers
+     * without storable parameters do nothing.
      *
      * <p>Call this explicitly from the training loop, typically only when the
      * validation score improved. Inference deliberately does not persist.
@@ -150,6 +151,11 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     public void storeParameters() {
         for (Layer layer : layers) {
             layer.storeParameters();
+        }
+        if (optimizer != null) {
+            // in the same call as the layers, so that the weights and the moments cannot be
+            // written at two different steps
+            optimizer.storeState();
         }
     }
 }

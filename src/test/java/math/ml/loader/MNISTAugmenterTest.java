@@ -93,7 +93,7 @@ public class MNISTAugmenterTest {
     }
 
     @Test
-    public void halfPixelTranslationAveragesNeighbours() {
+    public void halfPixelTranslationAveragesNeighbors() {
         byte[] src = ramp();
         byte[] dst = MNISTAugmenter.warp(src, W, H, 0.5, 0.0, 0.0, 1.0);
         for (int y = 0; y < H; ++y) {

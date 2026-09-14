@@ -15,12 +15,26 @@
  */
 package math.ml.mlp;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /** Holds the parameter list, the step counter and the schedule of an optimizer. */
 public abstract class AbstractOptimizer implements Optimizer {
+
+    // "OPT1", so a file that is not one of these is refused instead of read as garbage
+    private static final int MAGIC = 0x4F505431;
+    private static final int FORMAT_VERSION = 1;
 
     /** The registered parameters, in registration order. */
     protected final List<Parameter> parameters = new ArrayList<>();
@@ -33,6 +47,10 @@ public abstract class AbstractOptimizer implements Optimizer {
     private double maxGradNorm = Double.POSITIVE_INFINITY;
     private double lastNorm;
     private int clippedSteps;
+
+    /** Names the state file, or null while this optimizer is not persisted at all. */
+    private String stateName;
+    private boolean storing;
 
     /**
      * For subclasses.
@@ -192,5 +210,190 @@ public abstract class AbstractOptimizer implements Optimizer {
      */
     public final int steps() {
         return step;
+    }
+
+    // -------------------------------------------------------------------------
+    // State that outlives the process
+    // -------------------------------------------------------------------------
+
+    /**
+     * Names the file {@code o_<name>} this optimizer's state is read from and written to,
+     * under the same two directories the layers use.
+     *
+     * @param name  identifies the state file
+     * @param store let {@link #storeState()} write it, as a layer's flag does
+     * @return this optimizer
+     */
+    public final AbstractOptimizer persistAs(String name, boolean store) {
+        this.stateName = Objects.requireNonNull(name, "name");
+        this.storing = store;
+        return this;
+    }
+
+    /**
+     * Writes the step counter and whatever per-parameter state the subclass keeps, if a name
+     * and the store flag were given. Called by the network along with the layers, so that the
+     * weights and this file cannot come from different steps.
+     */
+    @Override
+    public final void storeState() {
+        if (stateName == null || !storing) {
+            return;
+        }
+        Path dir = Paths.get(ParameterStore.STORE_DIR);
+        Path target = dir.resolve("o_" + stateName);
+        Path tmp = dir.resolve("o_" + stateName + ".tmp");
+        try {
+            Files.createDirectories(dir);
+            try (DataOutputStream out = new DataOutputStream(
+                    new BufferedOutputStream(Files.newOutputStream(tmp)))) {
+                out.writeInt(MAGIC);
+                out.writeInt(FORMAT_VERSION);
+                out.writeUTF(kind());
+                out.writeInt(step);
+                out.writeInt(clippedSteps);
+                out.writeDouble(lastNorm);
+                out.writeInt(parameters.size());
+                for (Parameter p : parameters) {
+                    out.writeInt(p.value().getArrayUnsafe().length);
+                }
+                writeState(out);
+            }
+            // so this one file is never half written; it does not make the set of layer
+            // files atomic, which needs a format that holds a whole network
+            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Reads back what {@link #storeState()} wrote. Not on {@link Optimizer} and deliberately
+     * not symmetric with its counterpart: the subclass state is sized from the registered
+     * parameters, so this can only run once the network is complete, and an explicit call by
+     * the program is the one place where that ordering is visible.
+     *
+     * @return the step the run continues at, for the caller to log
+     * @throws IllegalStateException if there is no name, no file, or the file does not describe
+     *                               this optimizer and these parameters
+     */
+    public final int loadState() {
+        if (stateName == null) {
+            throw new IllegalStateException("persistAs(...) has to name the state before it can be read");
+        }
+        Path source = Paths.get(ParameterStore.LOAD_DIR).resolve("o_" + stateName);
+        if (!Files.isReadable(source)) {
+            throw new IllegalStateException("no optimizer state at " + source);
+        }
+        try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(source)))) {
+            if (in.readInt() != MAGIC) {
+                throw new IllegalStateException(source + " is not an optimizer state");
+            }
+            int version = in.readInt();
+            if (version != FORMAT_VERSION) {
+                throw new IllegalStateException(source + " is format " + version + ", this is " + FORMAT_VERSION);
+            }
+            String written = in.readUTF();
+            if (!kind().equals(written)) {
+                throw new IllegalStateException(source + " was written by " + written + ", this is " + kind());
+            }
+            int loadedStep = in.readInt();
+            int loadedClipped = in.readInt();
+            double loadedNorm = in.readDouble();
+            checkShapes(in, source);
+            readState(in);
+            step = loadedStep;
+            clippedSteps = loadedClipped;
+            lastNorm = loadedNorm;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return step;
+    }
+
+    // Every silent way to resume into the wrong network ends here: one parameter more, one
+    // layer wider, the same layers registered in another order.
+    private void checkShapes(DataInputStream in, Path source) throws IOException {
+        int count = in.readInt();
+        if (count != parameters.size()) {
+            throw new IllegalStateException(source + " holds " + count + " parameters and this optimizer has "
+                    + parameters.size() + "; loadState() belongs after the network is built");
+        }
+        for (int i = 0; i < count; ++i) {
+            int length = in.readInt();
+            int own = parameters.get(i).value().getArrayUnsafe().length;
+            if (length != own) {
+                throw new IllegalStateException(source + " holds " + length + " elements for parameter " + i
+                        + " and this optimizer has " + own);
+            }
+        }
+    }
+
+    /**
+     * Distinguishes the state of one optimizer class from another's.
+     *
+     * @return a stable name for this kind of optimizer
+     */
+    protected abstract String kind();
+
+    /**
+     * Writes the hyperparameters that must match on a resume, then the per-parameter state in
+     * registration order.
+     *
+     * @param out the stream to write to
+     * @throws IOException if writing fails
+     */
+    protected abstract void writeState(DataOutputStream out) throws IOException;
+
+    /**
+     * Reads back what {@link #writeState} wrote, rejecting hyperparameters that differ.
+     *
+     * @param in the stream to read from
+     * @throws IOException if reading fails
+     */
+    protected abstract void readState(DataInputStream in) throws IOException;
+
+    /**
+     * Writes one per-parameter state array, for subclasses.
+     *
+     * @param out the stream to write to
+     * @param a   the array
+     * @throws IOException if writing fails
+     */
+    protected static void writeArray(DataOutputStream out, float[] a) throws IOException {
+        for (float f : a) {
+            out.writeFloat(f);
+        }
+    }
+
+    /**
+     * Fills one per-parameter state array, for subclasses. The length was checked before the
+     * subclass part of the file was reached.
+     *
+     * @param in the stream to read from
+     * @param a  the array to fill
+     * @throws IOException if reading fails
+     */
+    protected static void readArray(DataInputStream in, float[] a) throws IOException {
+        for (int i = 0; i < a.length; ++i) {
+            a[i] = in.readFloat();
+        }
+    }
+
+    /**
+     * Refuses a hyperparameter that differs from the one the state was written with. Exact,
+     * deliberately: both sides are constructor arguments and not computed values, and a moment
+     * decayed at one beta and then read at another is wrong in a way that looks like slow
+     * learning.
+     *
+     * @param written what the file holds
+     * @param own     what this optimizer was built with
+     * @param what    the name of the hyperparameter, for the message
+     * @throws IllegalStateException if the two differ
+     */
+    protected static void expect(float written, float own, String what) {
+        if (written != own) {
+            throw new IllegalStateException("state was written with " + what + " " + written + ", this is " + own);
+        }
     }
 }

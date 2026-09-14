@@ -30,18 +30,6 @@ import net.jamu.matrix.MatrixF;
 /** A fully connected layer, {@code y = W x + b}. */
 public class Hidden extends AbstractLayer {
 
-    /**
-     * Curated parameters. Read-only from code, so that no training run can
-     * overwrite a set that was promoted here by hand.
-     */
-    private static final String LOAD_DIR = "./data/";
-
-    /**
-     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR}
-     * manually once it has proven itself.
-     */
-    private static final String STORE_DIR = "./checkpoints/";
-
     /** The weight matrix, out x in. */
     protected final Parameter weights;
     /** The bias column, out x 1. */
@@ -183,24 +171,24 @@ public class Hidden extends AbstractLayer {
     }
 
     private MatrixF loadWeights() {
-        return load(LOAD_DIR + "w_" + name);
+        return load(ParameterStore.LOAD_DIR + "w_" + name);
     }
 
     private MatrixF loadBiases() {
-        return load(LOAD_DIR + "b_" + name);
+        return load(ParameterStore.LOAD_DIR + "b_" + name);
     }
 
     /** Writes the weights if storing was enabled at construction time. */
     public void storeWeights() {
         if (storeWeightsAndBiases) {
-            store(STORE_DIR + "w_" + name, weights.value());
+            store(ParameterStore.STORE_DIR + "w_" + name, weights.value());
         }
     }
 
     /** Writes the biases if storing was enabled at construction time. */
     public void storeBiases() {
         if (storeWeightsAndBiases) {
-            store(STORE_DIR + "b_" + name, biases.value());
+            store(ParameterStore.STORE_DIR + "b_" + name, biases.value());
         }
     }
 
@@ -224,7 +212,7 @@ public class Hidden extends AbstractLayer {
 
     private void store(String path, MatrixF matrix) {
         try {
-            Files.createDirectories(Paths.get(STORE_DIR));
+            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
             try (FileOutputStream fos = new FileOutputStream(path)) {
                 Matrices.serializeF(matrix, fos);
             }

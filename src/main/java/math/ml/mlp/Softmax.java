@@ -52,31 +52,23 @@ public final class Softmax extends AbstractLayer {
             return null;
         }
         int rows = output.numRows();
-        int cols = output.numColumns();
-        MatrixF gradientsOut = Matrices.createF(rows, cols);
-        MatrixF jacobian = Matrices.createF(rows, rows);
-        MatrixF oneGrad = Matrices.createF(rows, 1);
-        for (int col = 0; col < cols; ++col) {
+        MatrixF gradientsOut = Matrices.createF(rows, output.numColumns());
+        float[] s = output.getArrayUnsafe();
+        float[] g = lossGrads.getArrayUnsafe();
+        float[] out = gradientsOut.getArrayUnsafe();
+        // The Jacobian of one softmax column is diag(s) - s*s^T, and multiplying it out
+        // leaves s_i * (g_i - sum_j g_j s_j): one dot product and one pass per column
+        // instead of an explicit rows x rows matrix and a gemv. The sum is the only
+        // reduction here and stays in double, as the other reductions do.
+        for (int off = 0; off < out.length; off += rows) {
+            double sum = 0.0;
             for (int i = 0; i < rows; ++i) {
-                for (int j = 0; j < rows; ++j) {
-                    if (i < j) {
-                        float si = output.getUnsafe(i, col);
-                        float sj = output.getUnsafe(j, col);
-                        float sij = -si * sj;
-                        jacobian.setUnsafe(j, i, sij);
-                        jacobian.setUnsafe(i, j, sij);
-                    } else if (i == j) {
-                        float sii = output.getUnsafe(i, col);
-                        jacobian.setUnsafe(i, i, sii * (1.0f - sii));
-                    }
-                }
+                sum += (double) g[off + i] * s[off + i];
             }
-            // get the corresponding lossGrads column
-            MatrixF lossGrad = lossGrads.selectColumn(col);
-            // compute the gradient for this column
-            oneGrad = jacobian.mult(lossGrad, oneGrad);
-            // store it in the corresponding column of gradientsOut
-            gradientsOut.setColumnInplace(col, oneGrad);
+            float shift = (float) sum;
+            for (int i = 0; i < rows; ++i) {
+                out[off + i] = s[off + i] * (g[off + i] - shift);
+            }
         }
         output = null;
         return gradientsOut;

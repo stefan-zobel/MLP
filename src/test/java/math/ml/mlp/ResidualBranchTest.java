@@ -32,7 +32,7 @@ class ResidualBranchTest {
         // Sigmoid, not Relu: central differences are only valid on a smooth
         // function, and a step of H can flip a Relu across its kink. Relu's own
         // derivative is covered in ActivationTest.
-        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb1"), new BatchNorm(6), new Sigmoid());
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb1", 101L), new BatchNorm(6), new Sigmoid());
         assertInputGradient(layer, input(6, 5, 21L), input(6, 5, 22L), 3e-2);
     }
 
@@ -40,7 +40,7 @@ class ResidualBranchTest {
     void backwardMatchesNumericalInputGradientWithoutAnActivation() {
         // the branch above contains a layer that may mutate, this one does not, so
         // the two exercise the copied and the uncopied path through the same code
-        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb2"), new BatchNorm(6));
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb2", 102L), new BatchNorm(6));
         assertInputGradient(layer, input(6, 5, 31L), input(6, 5, 32L), 3e-2);
     }
 
@@ -92,5 +92,47 @@ class ResidualBranchTest {
         layer.setMode(NetworkMode.INFER);
         layer.forward(input(4, 3, 25L));
         assertNull(layer.backward(input(4, 3, 26L)));
+    }
+
+    // The forward and backward buffers have to stay distinct. A numerical gradient check holds
+    // the matrix backward returns and then calls forward hundreds of times against it, so one
+    // shared buffer would corrupt the comparison silently instead of failing.
+    @Test
+    void theGradientSurvivesALaterForward() {
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb4", 107L), new Sigmoid());
+        layer.setMode(NetworkMode.TRAIN);
+        layer.forward(input(6, 5, 27L));
+        MatrixF grads = layer.backward(input(6, 5, 28L));
+        MatrixF before = grads.copy();
+
+        layer.forward(input(6, 5, 29L));
+        layer.forward(input(6, 5, 30L));
+
+        for (int c = 0; c < before.numColumns(); ++c) {
+            for (int r = 0; r < before.numRows(); ++r) {
+                assertEquals(before.getUnsafe(r, c), grads.getUnsafe(r, c), 0.0f,
+                        "the gradient was overwritten at [" + r + "," + c + "]");
+            }
+        }
+    }
+
+    // The buffers are reused, so a changed batch has to resize them. Validation and training do
+    // not always run at the same batch, and a stale buffer of the wrong length is the kind of
+    // fault that surfaces only there.
+    @Test
+    void aChangedShapeReallocatesTheReusedBuffers() {
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb5", 109L), new Sigmoid());
+        layer.setMode(NetworkMode.TRAIN);
+
+        MatrixF wide = layer.forward(input(6, 5, 31L));
+        assertEquals(5, wide.numColumns());
+        MatrixF wideGrads = layer.backward(input(6, 5, 32L));
+        assertEquals(5, wideGrads.numColumns());
+
+        MatrixF narrow = layer.forward(input(6, 2, 33L));
+        assertEquals(6, narrow.numRows());
+        assertEquals(2, narrow.numColumns());
+        MatrixF narrowGrads = layer.backward(input(6, 2, 34L));
+        assertEquals(2, narrowGrads.numColumns());
     }
 }

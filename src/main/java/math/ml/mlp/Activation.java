@@ -15,12 +15,30 @@
  */
 package math.ml.mlp;
 
+import java.util.stream.IntStream;
+
 import net.jamu.matrix.FFunction;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 /** An element-wise activation, given as a function and its derivative. */
 public class Activation extends AbstractLayer {
+
+    // Below this many elements the fork/join split costs more than it saves. The number is
+    // the break-even of the cheapest activation there is, a bandwidth-bound ReLU pass, so
+    // above it no activation is slower for being split and the transcendental ones are
+    // several times faster. Splitting is legal because element-wise means the function
+    // carries no state from one element to the next.
+    private static final int PARALLEL_THRESHOLD = 1 << 18;
+    private static final int CHUNKS = Runtime.getRuntime().availableProcessors();
+
+    // Reused across steps, the way the convolution and the attention layers reuse theirs: at a
+    // sequence length the output of one activation is tens of megabytes, and allocating it twice
+    // per step was costing about as much as computing it.
+    private MatrixF output;
+    private MatrixF gradientsOut;
+    private int rows;
+    private int columns;
 
     /** The activation itself. */
     protected final FFunction fun;
@@ -43,8 +61,16 @@ public class Activation extends AbstractLayer {
         // j x m
         super.forward(input);
         float[] in = input.getArrayUnsafe();
-        MatrixF output = Matrices.sameDimF(input);
-        applyForward(in, output.getArrayUnsafe(), 0, in.length);
+        ensureBuffers(input.numRows(), input.numColumns());
+        float[] out = output.getArrayUnsafe();
+        int chunks = chunkCount(in.length);
+        if (chunks == 1) {
+            applyForward(in, out, 0, in.length);
+        } else {
+            int span = span(in.length, chunks);
+            IntStream.range(0, chunks).parallel()
+                    .forEach(c -> applyForward(in, out, c * span, Math.min(c * span + span, in.length)));
+        }
         return output;
     }
 
@@ -57,10 +83,19 @@ public class Activation extends AbstractLayer {
         // (j x m) o (j x m)
         checkSameDimension(outputGrads);
         float[] grads = outputGrads.getArrayUnsafe();
-        MatrixF out = Matrices.sameDimF(outputGrads);
-        applyBackward(input.getArrayUnsafe(), grads, out.getArrayUnsafe(), 0, grads.length);
+        ensureBuffers(outputGrads.numRows(), outputGrads.numColumns());
+        float[] preAct = input.getArrayUnsafe();
+        float[] out = gradientsOut.getArrayUnsafe();
+        int chunks = chunkCount(grads.length);
+        if (chunks == 1) {
+            applyBackward(preAct, grads, out, 0, grads.length);
+        } else {
+            int span = span(grads.length, chunks);
+            IntStream.range(0, chunks).parallel()
+                    .forEach(c -> applyBackward(preAct, grads, out, c * span, Math.min(c * span + span, grads.length)));
+        }
         input = null;
-        return out;
+        return gradientsOut;
     }
 
     /**
@@ -95,6 +130,24 @@ public class Activation extends AbstractLayer {
         for (int i = from; i < to; ++i) {
             out[i] = grads[i] * deriv.apply(preAct[i]);
         }
+    }
+
+    private void ensureBuffers(int r, int c) {
+        if (rows == r && columns == c) {
+            return;
+        }
+        output = Matrices.createF(r, c);
+        gradientsOut = Matrices.createF(r, c);
+        rows = r;
+        columns = c;
+    }
+
+    private static int chunkCount(int length) {
+        return length < PARALLEL_THRESHOLD ? 1 : CHUNKS;
+    }
+
+    private static int span(int length, int chunks) {
+        return (length + chunks - 1) / chunks;
     }
 
     /** The matrix API checks this for us; a raw loop has to do it itself. */

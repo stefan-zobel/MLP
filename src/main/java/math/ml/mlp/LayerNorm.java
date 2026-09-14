@@ -48,9 +48,6 @@ import net.jamu.matrix.MatrixF;
  */
 public class LayerNorm extends AbstractLayer {
 
-    private static final String LOAD_DIR = "./data/";
-    private static final String STORE_DIR = "./checkpoints/";
-
     private final int features;
     private final float eps;
     private final String name;
@@ -119,7 +116,7 @@ public class LayerNorm extends AbstractLayer {
         beta = new Parameter("beta", Matrices.createF(features, 1), false);
 
         if (load) {
-            try (FileInputStream fis = new FileInputStream(LOAD_DIR + "ln_" + name)) {
+            try (FileInputStream fis = new FileInputStream(ParameterStore.LOAD_DIR + "ln_" + name)) {
                 readParameters(fis);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -363,8 +360,8 @@ public class LayerNorm extends AbstractLayer {
             return;
         }
         try {
-            Files.createDirectories(Paths.get(STORE_DIR));
-            try (FileOutputStream fos = new FileOutputStream(STORE_DIR + "ln_" + name)) {
+            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
+            try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "ln_" + name)) {
                 writeParameters(fos);
             }
         } catch (IOException e) {

@@ -31,11 +31,11 @@ import net.jamu.matrix.MatrixF;
  *
  * <p><b>Forward pass:</b> the same input matrix is fed into every branch.
  * Because some layers (e.g. {@link Dropout}) modify their input in-place,
- * each branch receives its own defensive copy of the original input. The
- * resulting output matrices are then vertically stacked (row-wise
- * concatenated) in branch order: if branch {@code i} produces an output of
- * shape {@code k_i x m}, the combined forward output has shape
- * {@code (sum k_i) x m}.
+ * each branch receives its own defensive copy of the original input, into a
+ * buffer that is reused across steps. The resulting output matrices are then
+ * vertically stacked (row-wise concatenated) in branch order: if branch
+ * {@code i} produces an output of shape {@code k_i x m}, the combined forward
+ * output has shape {@code (sum k_i) x m}.
  *
  * <p><b>Backward pass:</b> the incoming gradient is split vertically
  * according to the per-branch output row counts recorded during the last
@@ -82,6 +82,18 @@ public class ParallelBranches extends AbstractLayer {
      */
     private final boolean copyInput;
 
+    /**
+     * Reused across steps rather than allocated per call: the stacked output, one gradient
+     * slice per branch, the accumulated input gradient, and one input copy per branch when
+     * {@link #copyInput} is set. They are separate buffers on purpose -- a numerical gradient
+     * check holds the matrix backward returns while it calls forward hundreds of times, so
+     * nothing forward writes into may be what backward returned.
+     */
+    private final MatrixF[] gradSlices;
+    private final MatrixF[] inputCopies;
+    private MatrixF output;
+    private MatrixF gradientsOut;
+
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
@@ -101,8 +113,13 @@ public class ParallelBranches extends AbstractLayer {
      * Constructor that accepts a pre-built list of branch sequences.
      *
      * @param branches list of branch sequences
+     * @throws IllegalArgumentException if the list is empty
      */
     public ParallelBranches(List<List<Layer>> branches) {
+        if (branches.isEmpty()) {
+            // there is nothing this layer could return: a matrix needs at least one row
+            throw new IllegalArgumentException("a ParallelBranches needs at least one branch");
+        }
         this.branches = new ArrayList<>(branches);
         this.branchOutputRows = new int[branches.size()];
         boolean mutates = false;
@@ -112,6 +129,8 @@ public class ParallelBranches extends AbstractLayer {
             }
         }
         this.copyInput = mutates;
+        this.gradSlices = new MatrixF[branches.size()];
+        this.inputCopies = mutates ? new MatrixF[branches.size()] : null;
     }
 
     // -------------------------------------------------------------------------
@@ -172,18 +191,33 @@ public class ParallelBranches extends AbstractLayer {
     public MatrixF forward(MatrixF input) {
         int n = branches.size();
         MatrixF[] outputs = new MatrixF[n];
+        int totalRows = 0;
         for (int b = 0; b < n; b++) {
             // Give every branch its own copy of the input so that in-place
             // operations (e.g. Dropout) in one branch do not corrupt the
             // others. Not needed when no branch layer writes into its input.
-            MatrixF x = copyInput ? copyOf(input) : input;
+            MatrixF x = input;
+            if (copyInput) {
+                inputCopies[b] = ensure(inputCopies[b], input.numRows(), input.numColumns());
+                x = inputCopies[b].setInplace(input);
+            }
             for (Layer layer : branches.get(b)) {
                 x = layer.forward(x);
             }
             outputs[b] = x;
             branchOutputRows[b] = x.numRows();
+            totalRows += x.numRows();
         }
-        return stackRows(outputs);
+        // Every branch output is held until here, which is what keeps a mutating layer in one
+        // branch from being visible in another.
+        int cols = outputs[0].numColumns();
+        output = ensure(output, totalRows, cols);
+        int rowOffset = 0;
+        for (MatrixF branchOut : outputs) {
+            output.setSubmatrixInplace(rowOffset, 0, branchOut, 0, 0, branchOut.numRows() - 1, cols - 1);
+            rowOffset += branchOut.numRows();
+        }
+        return output;
     }
 
     /**
@@ -201,12 +235,17 @@ public class ParallelBranches extends AbstractLayer {
             return null;
         }
         int n = branches.size();
+        int cols = grads.numColumns();
         MatrixF summedInputGrads = null;
         int rowOffset = 0;
         for (int b = 0; b < n; b++) {
             int rows = branchOutputRows[b];
-            // Extract the gradient slice that belongs to this branch.
-            MatrixF branchGrads = grads.selectSubmatrix(rowOffset, 0, rowOffset + rows - 1, grads.numColumns() - 1);
+            // Extract the gradient slice that belongs to this branch. One buffer per branch,
+            // because a branch that writes into the gradient it is handed must not be able to
+            // reach what another branch still has to read.
+            gradSlices[b] = ensure(gradSlices[b], rows, cols);
+            MatrixF branchGrads = gradSlices[b].setSubmatrixInplace(0, 0, grads, rowOffset, 0,
+                    rowOffset + rows - 1, cols - 1);
             rowOffset += rows;
             // Back-propagate through the branch layers in reverse order.
             MatrixF g = branchGrads;
@@ -220,7 +259,8 @@ public class ParallelBranches extends AbstractLayer {
                 // Unconditional, and not covered by mutatesGradients(): the property
                 // here is that a branch may still hold a reference to the matrix it
                 // returned, which addInplace below would overwrite.
-                summedInputGrads = g.copy();
+                gradientsOut = ensure(gradientsOut, g.numRows(), g.numColumns());
+                summedInputGrads = gradientsOut.setInplace(g);
             } else {
                 summedInputGrads.addInplace(1.0f, g);
             }
@@ -233,32 +273,14 @@ public class ParallelBranches extends AbstractLayer {
     // -------------------------------------------------------------------------
 
     /**
-     * Creates an independent element-by-element copy of {@code src}.
+     * Returns {@code buffer} when it already has the wanted shape, and a fresh matrix of that
+     * shape otherwise.
      */
-    private static MatrixF copyOf(MatrixF src) {
-    	return src.copy();
-    }
-
-    /**
-     * Vertically stacks (row-wise concatenates) an array of matrices into a
-     * single new matrix. All matrices must have the same number of columns.
-     */
-    private static MatrixF stackRows(MatrixF[] matrices) {
-        if (matrices.length == 0) {
-            return Matrices.createF(0, 0);
+    private static MatrixF ensure(MatrixF buffer, int rows, int columns) {
+        if (buffer == null || buffer.numRows() != rows || buffer.numColumns() != columns) {
+            return Matrices.createF(rows, columns);
         }
-        int totalRows = 0;
-        for (MatrixF m : matrices) {
-            totalRows += m.numRows();
-        }
-        int cols = matrices[0].numColumns();
-        MatrixF result = Matrices.createF(totalRows, cols);
-        int rowOffset = 0;
-        for (MatrixF m : matrices) {
-            result.setSubmatrixInplace(rowOffset, 0, m, 0, 0, m.numRows() - 1, cols - 1);
-            rowOffset += m.numRows();
-        }
-        return result;
+        return buffer;
     }
 
 }
