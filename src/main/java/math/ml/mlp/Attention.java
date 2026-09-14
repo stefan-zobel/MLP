@@ -44,18 +44,6 @@ import net.jamu.matrix.MatrixF;
  */
 public class Attention extends AbstractLayer {
 
-    /**
-     * Curated parameters. Read-only from code, so that no training run can
-     * overwrite a set that was promoted here by hand.
-     */
-    private static final String LOAD_DIR = "./data/";
-
-    /**
-     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR}
-     * manually once it has proven itself.
-     */
-    private static final String STORE_DIR = "./checkpoints/";
-
     /** Query projections, one per head, each dHead x dModel. */
     protected final Parameter[] queries;
     /** Key projections, one per head, each dHead x dModel. */
@@ -162,7 +150,7 @@ public class Attention extends AbstractLayer {
     }
 
     private Parameter projection(String suffix, int rows, int cols, float bound, boolean loading, long seed) {
-        MatrixF w = loading ? load(LOAD_DIR + "w_" + name + "_" + suffix)
+        MatrixF w = loading ? load(ParameterStore.LOAD_DIR + "w_" + name + "_" + suffix)
                 : Matrices.randomUniformF(rows, cols, -bound, bound, seed);
         return new Parameter(suffix, w, true);
     }
@@ -379,7 +367,7 @@ public class Attention extends AbstractLayer {
             return;
         }
         try {
-            Files.createDirectories(Paths.get(STORE_DIR));
+            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -392,7 +380,7 @@ public class Attention extends AbstractLayer {
     }
 
     private void store(Parameter p) {
-        try (FileOutputStream fos = new FileOutputStream(STORE_DIR + "w_" + name + "_" + p.name())) {
+        try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "w_" + name + "_" + p.name())) {
             Matrices.serializeF(p.value(), fos);
         } catch (IOException e) {
             throw new UncheckedIOException(e);

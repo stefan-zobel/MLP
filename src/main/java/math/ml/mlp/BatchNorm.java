@@ -65,9 +65,6 @@ import net.jamu.matrix.MatrixF;
  */
 public class BatchNorm extends AbstractLayer {
 
-    private static final String LOAD_DIR = "./data/";
-    private static final String STORE_DIR = "./checkpoints/";
-
     private final int     features;
     private final String  name;
     private final boolean storeParameters;
@@ -160,7 +157,7 @@ public class BatchNorm extends AbstractLayer {
         invStd      = Matrices.createF(features, 1);
 
         if (load) {
-            try (FileInputStream fis = new FileInputStream(LOAD_DIR + "bn_" + name)) {
+            try (FileInputStream fis = new FileInputStream(ParameterStore.LOAD_DIR + "bn_" + name)) {
                 readParameters(fis);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -206,8 +203,8 @@ public class BatchNorm extends AbstractLayer {
             return;
         }
         try {
-            Files.createDirectories(Paths.get(STORE_DIR));
-            try (FileOutputStream fos = new FileOutputStream(STORE_DIR + "bn_" + name)) {
+            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
+            try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "bn_" + name)) {
                 writeParameters(fos);
             }
         } catch (IOException e) {

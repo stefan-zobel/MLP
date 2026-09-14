@@ -38,18 +38,6 @@ import net.jamu.matrix.MatrixF;
  */
 public class Conv2D extends AbstractLayer {
 
-    /**
-     * Curated parameters. Read-only from code, so that no training run can
-     * overwrite a set that was promoted here by hand.
-     */
-    private static final String LOAD_DIR = "./data/";
-
-    /**
-     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR}
-     * manually once it has proven itself.
-     */
-    private static final String STORE_DIR = "./checkpoints/";
-
     /** The kernels, out x (in * kernel * kernel), one row per output channel. */
     protected final Parameter kernels;
     /** The bias column, out x 1, one entry per output channel. */
@@ -177,8 +165,8 @@ public class Conv2D extends AbstractLayer {
         MatrixF k;
         MatrixF b;
         if (loadKernelsAndBiases) {
-            k = load(LOAD_DIR + "w_" + name);
-            b = load(LOAD_DIR + "b_" + name);
+            k = load(ParameterStore.LOAD_DIR + "w_" + name);
+            b = load(ParameterStore.LOAD_DIR + "b_" + name);
         } else {
             // the canonical convolutional fan-in and fan-out: one kernel sees patchRows
             // inputs and contributes to outChannels * kernel * kernel outputs
@@ -344,14 +332,14 @@ public class Conv2D extends AbstractLayer {
     /** Writes the kernels if storing was enabled at construction time. */
     public void storeKernels() {
         if (storeKernelsAndBiases) {
-            store(STORE_DIR + "w_" + name, kernels.value());
+            store(ParameterStore.STORE_DIR + "w_" + name, kernels.value());
         }
     }
 
     /** Writes the biases if storing was enabled at construction time. */
     public void storeBiases() {
         if (storeKernelsAndBiases) {
-            store(STORE_DIR + "b_" + name, biases.value());
+            store(ParameterStore.STORE_DIR + "b_" + name, biases.value());
         }
     }
 
@@ -375,7 +363,7 @@ public class Conv2D extends AbstractLayer {
 
     private void store(String path, MatrixF matrix) {
         try {
-            Files.createDirectories(Paths.get(STORE_DIR));
+            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
             try (FileOutputStream fos = new FileOutputStream(path)) {
                 Matrices.serializeF(matrix, fos);
             }

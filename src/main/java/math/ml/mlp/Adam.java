@@ -15,6 +15,9 @@
  */
 package math.ml.mlp;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -125,6 +128,39 @@ public final class Adam extends AbstractOptimizer {
                 v[i] *= decayFactor;
             }
             v[i] -= alpha * m1[i] / ((float) Math.sqrt(m2[i]) + epsHat);
+        }
+    }
+
+    @Override
+    protected String kind() {
+        return "Adam";
+    }
+
+    @Override
+    protected void writeState(DataOutputStream out) throws IOException {
+        out.writeFloat(beta1);
+        out.writeFloat(beta2);
+        out.writeFloat(eps);
+        out.writeFloat(weightDecay);
+        for (float[] m : firstMoment) {
+            writeArray(out, m);
+        }
+        for (float[] m : secondMoment) {
+            writeArray(out, m);
+        }
+    }
+
+    @Override
+    protected void readState(DataInputStream in) throws IOException {
+        expect(in.readFloat(), beta1, "beta1");
+        expect(in.readFloat(), beta2, "beta2");
+        expect(in.readFloat(), eps, "eps");
+        expect(in.readFloat(), weightDecay, "weightDecay");
+        for (float[] m : firstMoment) {
+            readArray(in, m);
+        }
+        for (float[] m : secondMoment) {
+            readArray(in, m);
         }
     }
 }

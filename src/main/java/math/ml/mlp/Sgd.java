@@ -15,6 +15,9 @@
  */
 package math.ml.mlp;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -109,6 +112,29 @@ public final class Sgd extends AbstractOptimizer {
             if (move) {
                 v[i] -= rate * b[i];
             }
+        }
+    }
+
+    @Override
+    protected String kind() {
+        return "Sgd";
+    }
+
+    @Override
+    protected void writeState(DataOutputStream out) throws IOException {
+        // without momentum the list is empty and the step counter is the whole of the state,
+        // which the schedule still needs
+        out.writeFloat(momentum);
+        for (float[] b : velocity) {
+            writeArray(out, b);
+        }
+    }
+
+    @Override
+    protected void readState(DataInputStream in) throws IOException {
+        expect(in.readFloat(), momentum, "momentum");
+        for (float[] b : velocity) {
+            readArray(in, b);
         }
     }
 }

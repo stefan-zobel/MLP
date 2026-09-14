@@ -35,18 +35,6 @@ import net.jamu.matrix.MatrixF;
  */
 public class PositionalEncoding extends AbstractLayer {
 
-    /**
-     * Curated parameters. Read-only from code, so that no training run can
-     * overwrite a set that was promoted here by hand.
-     */
-    private static final String LOAD_DIR = "./data/";
-
-    /**
-     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR}
-     * manually once it has proven itself.
-     */
-    private static final String STORE_DIR = "./checkpoints/";
-
     /** The position table, dModel x seqLen, one column per position. */
     protected final Parameter positions;
     /** Identifies the parameter file of this layer. */
@@ -105,7 +93,7 @@ public class PositionalEncoding extends AbstractLayer {
         this.storePositions = storePositions;
         MatrixF p;
         if (loadPositions) {
-            p = load(LOAD_DIR + "w_" + name);
+            p = load(ParameterStore.LOAD_DIR + "w_" + name);
         } else {
             // the table is added to the activations rather than multiplied with them, so the
             // fan-in rules of Init do not apply; this keeps it small against a unit-scale input
@@ -185,8 +173,8 @@ public class PositionalEncoding extends AbstractLayer {
     public void storeParameters() {
         if (storePositions) {
             try {
-                Files.createDirectories(Paths.get(STORE_DIR));
-                try (FileOutputStream fos = new FileOutputStream(STORE_DIR + "w_" + name)) {
+                Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
+                try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "w_" + name)) {
                     Matrices.serializeF(positions.value(), fos);
                 }
             } catch (IOException e) {

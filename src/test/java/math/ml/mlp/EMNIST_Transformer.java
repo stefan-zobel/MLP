@@ -36,7 +36,10 @@ import net.jamu.matrix.Statistics;
  * usual GELU because both baselines use one, which leaves the attention as the only difference
  * between them and this.
  *
- * <p>Usage: {@code EMNIST_Transformer [seed] [epochs] [peak rate] [passes per epoch]}.
+ * <p>Usage: {@code EMNIST_Transformer [seed] [epochs] [peak rate] [passes per epoch] [resume]}.
+ * A nonzero last argument continues an interrupted run from the promoted checkpoint: the same
+ * seed, the same epoch count and the same rate, so the schedule keeps its length, and only the
+ * epochs that are left are trained.
  */
 public class EMNIST_Transformer extends AbstractNetwork {
 
@@ -82,6 +85,10 @@ public class EMNIST_Transformer extends AbstractNetwork {
         int epochs = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_EPOCHS;
         float peakRate = args.length > 2 ? Float.parseFloat(args[2]) : DEFAULT_PEAK_RATE;
         int passesPerEpoch = args.length > 3 ? Integer.parseInt(args[3]) : DEFAULT_PASSES_PER_EPOCH;
+        // continue a run that was stopped: the weights come from ./data/, the optimizer moments
+        // and the step counter with them, and the epochs argument stays the whole plan so that
+        // the schedule keeps the length it was built with
+        boolean resume = args.length > 4 && Integer.parseInt(args[4]) != 0;
 
         SplittableRandom seeds = new SplittableRandom(baseSeed);
         EMNIST_Transformer net = new EMNIST_Transformer();
@@ -97,6 +104,7 @@ public class EMNIST_Transformer extends AbstractNetwork {
                 .blocks(BLOCKS)
                 .activation(Relu::new)
                 .names("vt_")
+                .load(resume)
                 .store(true)
                 .seed(baseSeed)
                 .build();
@@ -104,7 +112,7 @@ public class EMNIST_Transformer extends AbstractNetwork {
         net.add(encoder);
         // the head belongs to the program, not to the encoder: what is classified, and into how
         // many classes, is not the encoder's business
-        net.add(new Hidden(encoder.features(), NUM_LABELS, "vt_out", false, true, seeds.nextLong()));
+        net.add(new Hidden(encoder.features(), NUM_LABELS, "vt_out", resume, true, seeds.nextLong()));
         // no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
@@ -124,15 +132,29 @@ public class EMNIST_Transformer extends AbstractNetwork {
         System.out.printf("weights=%d (tokens %d, attention %d, mlp %d, head %d)%n", all, tokens, attention, mlp,
                 head);
 
-        net.optimizer(new Adam(
-                LearningRateSchedule.warmupThenCosine(totalSteps / 20, peakRate, totalSteps, peakRate / 100.0f),
-                0.0f));
+        AbstractOptimizer adam = new Adam(
+                LearningRateSchedule.warmupThenCosine(totalSteps / 20, peakRate, totalSteps, peakRate / 100.0f), 0.0f)
+                        .persistAs("vt", true);
+        net.optimizer(adam);
 
         double maxValidationAccuracy = 0.0;
         int bestEpoch = -1;
+        int firstEpoch = 0;
+        if (resume) {
+            // after the registration, because the moments are sized from the parameters
+            int done = adam.loadState();
+            firstEpoch = done / batchesPerEpoch;
+            bestEpoch = firstEpoch - 1;
+            // what the keep-best rule has to beat is the promoted checkpoint, and after a resume
+            // its score is only known by measuring it; starting from zero would store the next
+            // epoch whatever it scored
+            maxValidationAccuracy = net.validationAccuracy();
+            System.out.printf("resuming at step %d, epoch %d, checkpoint accuracy %.6f%n", done, firstEpoch,
+                    maxValidationAccuracy);
+        }
         long t0 = System.nanoTime();
 
-        for (int epoch = 0; epoch < epochs; ++epoch) {
+        for (int epoch = firstEpoch; epoch < epochs; ++epoch) {
             long e0 = System.nanoTime();
             for (int pass = 0; pass < passesPerEpoch; ++pass) {
                 data.regenerate(passes);
