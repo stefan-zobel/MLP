@@ -16,6 +16,7 @@
 package math.ml.mlp;
 
 import java.util.Arrays;
+import java.util.stream.IntStream;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -110,36 +111,39 @@ public class MaxPool2D extends AbstractLayer {
         ensureBuffers(m);
         float[] src = in.getArrayUnsafe();
         float[] dst = output.getArrayUnsafe();
+        // one sample owns a contiguous run of output columns and of argmax entries
+        IntStream.range(0, m).parallel().forEach(s -> forwardSample(src, dst, s));
+        return output;
+    }
+
+    private void forwardSample(float[] src, float[] dst, int s) {
+        int sample = s * inH * inW * channels;
         int outSpatial = outH * outW;
-        for (int s = 0; s < m; ++s) {
-            int sample = s * inSpatial * channels;
-            for (int oy = 0; oy < outH; ++oy) {
-                for (int ox = 0; ox < outW; ++ox) {
-                    int column = (s * outSpatial + oy * outW + ox) * channels;
-                    int iy0 = oy * stride;
-                    int ix0 = ox * stride;
-                    for (int c = 0; c < channels; ++c) {
-                        int bestIdx = -1;
-                        float best = 0.0f;
-                        for (int wy = 0; wy < window; ++wy) {
-                            int rowBase = sample + (iy0 + wy) * inW * channels;
-                            for (int wx = 0; wx < window; ++wx) {
-                                int idx = rowBase + (ix0 + wx) * channels + c;
-                                float v = src[idx];
-                                // strictly greater, so a tie keeps the lowest index
-                                if (bestIdx < 0 || v > best) {
-                                    best = v;
-                                    bestIdx = idx;
-                                }
+        for (int oy = 0; oy < outH; ++oy) {
+            for (int ox = 0; ox < outW; ++ox) {
+                int column = (s * outSpatial + oy * outW + ox) * channels;
+                int iy0 = oy * stride;
+                int ix0 = ox * stride;
+                for (int c = 0; c < channels; ++c) {
+                    int bestIdx = -1;
+                    float best = 0.0f;
+                    for (int wy = 0; wy < window; ++wy) {
+                        int rowBase = sample + (iy0 + wy) * inW * channels;
+                        for (int wx = 0; wx < window; ++wx) {
+                            int idx = rowBase + (ix0 + wx) * channels + c;
+                            float v = src[idx];
+                            // strictly greater, so a tie keeps the lowest index
+                            if (bestIdx < 0 || v > best) {
+                                best = v;
+                                bestIdx = idx;
                             }
                         }
-                        dst[column + c] = best;
-                        argmax[column + c] = bestIdx;
                     }
+                    dst[column + c] = best;
+                    argmax[column + c] = bestIdx;
                 }
             }
         }
-        return output;
     }
 
     @Override
@@ -149,13 +153,25 @@ public class MaxPool2D extends AbstractLayer {
         }
         float[] src = outputGrads.getArrayUnsafe();
         float[] dst = inputGrads.getArrayUnsafe();
-        Arrays.fill(dst, 0.0f);
+        int m = src.length / (outH * outW * channels);
+        // Parallel over samples rather than over the flat index: with overlapping windows one
+        // input element can win several windows, so the additions below are not independent --
+        // but every argmax of a sample points inside that sample's own region, and within a
+        // sample the ascending order is the one the flat loop had.
+        IntStream.range(0, m).parallel().forEach(s -> backwardSample(src, dst, s));
+        return inputGrads;
+    }
+
+    private void backwardSample(float[] src, float[] dst, int s) {
+        int inStride = inH * inW * channels;
+        int outStride = outH * outW * channels;
         // every position that did not win its window contributes nothing, which is why
         // the destination is cleared rather than written element by element
-        for (int i = 0; i < src.length; ++i) {
+        Arrays.fill(dst, s * inStride, (s + 1) * inStride, 0.0f);
+        int to = (s + 1) * outStride;
+        for (int i = s * outStride; i < to; ++i) {
             dst[argmax[i]] += src[i];
         }
-        return inputGrads;
     }
 
     private void ensureBuffers(int m) {

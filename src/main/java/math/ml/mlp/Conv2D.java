@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
@@ -269,27 +270,31 @@ public class Conv2D extends AbstractLayer {
      * so a padded position needs no separate pass to clear it.
      */
     private void im2col(float[] src, float[] dst, int m) {
+        // parallel over samples and not over positions: one sample owns a contiguous run of
+        // destination columns, so no two tasks ever touch the same element and the result is
+        // the same bit for bit as the sequential order
+        IntStream.range(0, m).parallel().forEach(s -> im2colSample(src, dst, s));
+    }
+
+    private void im2colSample(float[] src, float[] dst, int s) {
         int patchRows = inChannels * kernel * kernel;
-        int inSpatial = inH * inW;
         int outSpatial = outH * outW;
-        for (int s = 0; s < m; ++s) {
-            int sample = s * inSpatial * inChannels;
-            for (int oy = 0; oy < outH; ++oy) {
-                for (int ox = 0; ox < outW; ++ox) {
-                    int column = (s * outSpatial + oy * outW + ox) * patchRows;
-                    int iy0 = oy * stride - pad;
-                    int ix0 = ox * stride - pad;
-                    for (int c = 0; c < inChannels; ++c) {
-                        for (int ky = 0; ky < kernel; ++ky) {
-                            int iy = iy0 + ky;
-                            boolean rowInside = iy >= 0 && iy < inH;
-                            int row = (c * kernel + ky) * kernel;
-                            for (int kx = 0; kx < kernel; ++kx) {
-                                int ix = ix0 + kx;
-                                dst[column + row + kx] = rowInside && ix >= 0 && ix < inW
-                                        ? src[sample + (iy * inW + ix) * inChannels + c]
-                                        : 0.0f;
-                            }
+        int sample = s * inH * inW * inChannels;
+        for (int oy = 0; oy < outH; ++oy) {
+            for (int ox = 0; ox < outW; ++ox) {
+                int column = (s * outSpatial + oy * outW + ox) * patchRows;
+                int iy0 = oy * stride - pad;
+                int ix0 = ox * stride - pad;
+                for (int c = 0; c < inChannels; ++c) {
+                    for (int ky = 0; ky < kernel; ++ky) {
+                        int iy = iy0 + ky;
+                        boolean rowInside = iy >= 0 && iy < inH;
+                        int row = (c * kernel + ky) * kernel;
+                        for (int kx = 0; kx < kernel; ++kx) {
+                            int ix = ix0 + kx;
+                            dst[column + row + kx] = rowInside && ix >= 0 && ix < inW
+                                    ? src[sample + (iy * inW + ix) * inChannels + c]
+                                    : 0.0f;
                         }
                     }
                 }
@@ -299,29 +304,35 @@ public class Conv2D extends AbstractLayer {
 
     /** The inverse of {@link #im2col}, accumulating because neighboring patches overlap. */
     private void col2im(float[] src, float[] dst, int m) {
+        // Also parallel over samples, which is what keeps the accumulation safe: neighbouring
+        // patches overlap, so the order of the additions matters, but every element a sample
+        // writes lies inside that sample's own region and its order there is unchanged.
+        IntStream.range(0, m).parallel().forEach(s -> col2imSample(src, dst, s));
+    }
+
+    private void col2imSample(float[] src, float[] dst, int s) {
         int patchRows = inChannels * kernel * kernel;
         int inSpatial = inH * inW;
         int outSpatial = outH * outW;
-        Arrays.fill(dst, 0, m * inSpatial * inChannels, 0.0f);
-        for (int s = 0; s < m; ++s) {
-            int sample = s * inSpatial * inChannels;
-            for (int oy = 0; oy < outH; ++oy) {
-                for (int ox = 0; ox < outW; ++ox) {
-                    int column = (s * outSpatial + oy * outW + ox) * patchRows;
-                    int iy0 = oy * stride - pad;
-                    int ix0 = ox * stride - pad;
-                    for (int c = 0; c < inChannels; ++c) {
-                        for (int ky = 0; ky < kernel; ++ky) {
-                            int iy = iy0 + ky;
-                            if (iy < 0 || iy >= inH) {
-                                continue;
-                            }
-                            int row = (c * kernel + ky) * kernel;
-                            for (int kx = 0; kx < kernel; ++kx) {
-                                int ix = ix0 + kx;
-                                if (ix >= 0 && ix < inW) {
-                                    dst[sample + (iy * inW + ix) * inChannels + c] += src[column + row + kx];
-                                }
+        int sample = s * inSpatial * inChannels;
+        // zeroing this sample's slice here saves the separate pass over the whole buffer
+        Arrays.fill(dst, sample, sample + inSpatial * inChannels, 0.0f);
+        for (int oy = 0; oy < outH; ++oy) {
+            for (int ox = 0; ox < outW; ++ox) {
+                int column = (s * outSpatial + oy * outW + ox) * patchRows;
+                int iy0 = oy * stride - pad;
+                int ix0 = ox * stride - pad;
+                for (int c = 0; c < inChannels; ++c) {
+                    for (int ky = 0; ky < kernel; ++ky) {
+                        int iy = iy0 + ky;
+                        if (iy < 0 || iy >= inH) {
+                            continue;
+                        }
+                        int row = (c * kernel + ky) * kernel;
+                        for (int kx = 0; kx < kernel; ++kx) {
+                            int ix = ix0 + kx;
+                            if (ix >= 0 && ix < inW) {
+                                dst[sample + (iy * inW + ix) * inChannels + c] += src[column + row + kx];
                             }
                         }
                     }
