@@ -137,6 +137,16 @@ public final class ModelBundle {
         }
 
         /**
+         * How many entries have been written so far, so that a caller can tell what one
+         * layer contributed.
+         *
+         * @return the number of entries in this bundle
+         */
+        public int entryCount() {
+            return keys.size();
+        }
+
+        /**
          * Writes the manifest and moves the finished bundle into place, which is
          * the only moment anything is visible at the target path.
          *

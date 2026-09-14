@@ -165,7 +165,17 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     public void storeParameters(Path file) {
         try (ModelBundle.Writer out = ModelBundle.write(file, batchCount)) {
             for (Layer layer : layers) {
+                // a layer that writes fewer entries than it has trainable matrices is leaving
+                // weights behind, and a model missing weights looks exactly like one that is not
+                List<Parameter> own = layer.parameters();
+                int before = out.entryCount();
                 layer.writeParameters(out);
+                int written = out.entryCount() - before;
+                if (written < own.size()) {
+                    throw new IllegalStateException(layer.getClass().getSimpleName() + " has "
+                            + own.size() + " trainable matrices and contributed " + written
+                            + " entries to the bundle");
+                }
             }
             if (optimizer != null) {
                 // one entry among the others, so that the moments cannot be a different age

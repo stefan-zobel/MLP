@@ -31,6 +31,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 class NetworkPersistenceTest {
@@ -116,6 +117,45 @@ class NetworkPersistenceTest {
         read.loadParameters(file);
 
         assertSameParameters(net, read);
+    }
+
+    @Test
+    void aLayerThatLeavesOneOfItsMatricesOutIsRefused() {
+        Net net = new Net();
+        net.add(new Hidden(4, 3, "complete", 11L));
+        net.add(new ForgetfulLayer("forgetful"));
+
+        String message = assertThrows(IllegalStateException.class,
+                () -> net.storeParameters(dir.resolve("m.zip"))).getMessage();
+        assertTrue(message.contains("ForgetfulLayer"), message);
+        assertTrue(message.contains("2") && message.contains("1"), message);
+        assertFalse(Files.exists(dir.resolve("m.zip")), "a model missing weights must not reach the disk");
+    }
+
+    @Test
+    void aLayerWithMoreEntriesThanParametersIsFine() {
+        Path file = dir.resolve("m.zip");
+        Net net = new Net();
+        // two trainable matrices, four entries: the running statistics are not trainable and
+        // are exactly the slack the check tolerates
+        net.add(new BatchNorm(3, "norm"));
+        net.storeParameters(file);
+
+        Net read = new Net();
+        read.add(new BatchNorm(3, "norm"));
+        assertEquals(0, read.loadParameters(file));
+    }
+
+    @Test
+    void aNetworkOfLayersWithoutParametersStillStores() {
+        Path file = dir.resolve("m.zip");
+        Net net = new Net();
+        net.add(new Relu());
+        net.add(new Relu());
+
+        net.storeParameters(file);
+
+        assertTrue(Files.exists(file));
     }
 
     @Test
@@ -237,6 +277,41 @@ class NetworkPersistenceTest {
 
         List<Parameter> every() {
             return layers.stream().flatMap(l -> l.parameters().stream()).toList();
+        }
+    }
+
+    // declares two trainable matrices and writes one, which is what no structural check
+    // caught until the count below
+    private static final class ForgetfulLayer extends AbstractLayer {
+
+        private final String name;
+        private final Parameter kept;
+        private final Parameter dropped;
+
+        ForgetfulLayer(String name) {
+            this.name = name;
+            this.kept = new Parameter("kept", Matrices.createF(2, 2), true);
+            this.dropped = new Parameter("dropped", Matrices.createF(2, 2), true);
+        }
+
+        @Override
+        public List<Parameter> parameters() {
+            return List.of(kept, dropped);
+        }
+
+        @Override
+        public MatrixF forward(MatrixF in) {
+            return in;
+        }
+
+        @Override
+        public MatrixF backward(MatrixF grads) {
+            return grads;
+        }
+
+        @Override
+        public void writeParameters(ParameterSink sink) throws IOException {
+            ParameterStore.write(sink, name + "/kept", kept.value());
         }
     }
 
