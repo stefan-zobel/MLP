@@ -141,6 +141,11 @@ public class EMNIST_Transformer extends AbstractNetwork {
             // after the whole network is built, because every matrix it fills has to exist
             int done = net.loadParameters("vt");
             firstEpoch = done / batchesPerEpoch;
+            // put the data stream back where the uninterrupted run would have been: the pass
+            // is a pure function of the generator, so replaying its draws is enough
+            for (int p = 0; p < firstEpoch * passesPerEpoch; ++p) {
+                data.skip(passes);
+            }
             bestEpoch = firstEpoch - 1;
             // what the keep-best rule has to beat is the promoted checkpoint, and after a resume
             // its score is only known by measuring it; starting from zero would store the next

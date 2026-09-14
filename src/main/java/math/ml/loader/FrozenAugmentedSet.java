@@ -157,6 +157,14 @@ public final class FrozenAugmentedSet implements PassSource {
         return out;
     }
 
+    @Override
+    public void skip(SplittableRandom rnd) {
+        // the order is drawn and thrown away, and the cursor moves on: which frozen pass comes
+        // next is a field here and not a draw, so restoring the generator alone would not do it
+        permutation(rnd);
+        ++served;
+    }
+
     private int[] permutation(SplittableRandom rnd) {
         int[] order = new int[count];
         for (int i = 0; i < count; ++i) {

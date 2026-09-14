@@ -187,6 +187,15 @@ public final class AugmentedSet implements PassSource {
         });
     }
 
+    @Override
+    public void skip(SplittableRandom rnd) {
+        // the same two draws regenerate makes, in the same order, with nothing built from them
+        permutation(rnd);
+        for (int j = 0; j < count; ++j) {
+            rnd.nextLong();
+        }
+    }
+
     private byte[] distort(byte[] image, long seed) {
         SplittableRandom rnd = new SplittableRandom(seed);
         int draw = rnd.nextInt(totalWeight);

@@ -125,6 +125,11 @@ public class EMNIST_ConvNetwork2 extends AbstractNetwork {
         int firstEpoch = 0;
         if (resume) {
             firstEpoch = net.resume("c2", batchesPerEpoch);
+            // put the data stream back where the uninterrupted run would have been: the pass
+            // is a pure function of the generator, so replaying its draws is enough
+            for (int p = 0; p < firstEpoch * PASSES_PER_EPOCH; ++p) {
+                data.skip(passes);
+            }
             // what keep-best has to beat is the bundle that was just loaded, and its score is
             // only known by measuring it; from zero the next epoch would store whatever it scored
             maxValidationAccuracy = net.validationAccuracy();

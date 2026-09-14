@@ -109,6 +109,14 @@ public class EMNIST_TrainingNetwork1 extends AbstractNetwork {
         int firstEpoch = 0;
         if (resume) {
             firstEpoch = net.resume("e1_" + arm, batchesPerEpoch);
+            // the log counter is its own field, so it has to be moved too or the continued
+            // run reports epochs it already trained
+            epoch = firstEpoch;
+            // put the data stream back where the uninterrupted run would have been: the pass
+            // is a pure function of the generator, so replaying its draws is enough
+            for (int p = 0; p < firstEpoch * PASSES_PER_EPOCH; ++p) {
+                data.skip(passes);
+            }
             // what keep-best has to beat is the bundle that was just loaded, and its score is
             // only known by measuring it; from zero the next epoch would store whatever it scored
             maxValidationAccuracy = net.validationAccuracy();

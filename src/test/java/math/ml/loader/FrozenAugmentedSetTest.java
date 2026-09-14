@@ -55,6 +55,26 @@ public class FrozenAugmentedSetTest {
         return FrozenAugmentedSet.of(source, PASSES, new SplittableRandom(seed));
     }
 
+    @Test
+    public void skippingLeavesTheGeneratorAndTheCursorWhereRegeneratingWouldHave() {
+        FrozenAugmentedSet straight = frozen(live(), 23L);
+        SplittableRandom a = new SplittableRandom(11L);
+        straight.regenerate(a);
+        straight.regenerate(a);
+        straight.regenerate(a);
+
+        FrozenAugmentedSet skipped = frozen(live(), 23L);
+        SplittableRandom b = new SplittableRandom(11L);
+        skipped.skip(b);
+        skipped.skip(b);
+        skipped.regenerate(b);
+
+        // this also pins the cursor: a skip that drew the order but left served alone would
+        // serve the first frozen pass here instead of the third
+        assertArrayEquals(straight.images().getArrayUnsafe(), skipped.images().getArrayUnsafe());
+        assertArrayEquals(straight.labels().getArrayUnsafe(), skipped.labels().getArrayUnsafe());
+    }
+
     private static int labelOf(PassSource set, int column) {
         float[] labels = set.labels().getArrayUnsafe();
         for (int r = 0; r < LABEL_ROWS; ++r) {

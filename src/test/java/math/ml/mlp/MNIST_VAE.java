@@ -191,6 +191,11 @@ public class MNIST_VAE extends AbstractNetwork {
         int firstEpoch = 0;
         if (resume) {
             firstEpoch = net.resume("vae", NUM_BATCHES_PER_EPOCH);
+            // the pre-loop shuffle above supplies the first permutation; these are the ones the
+            // epochs already trained through. TARGETS == IMAGES, so one call does both
+            for (int e = 0; e < firstEpoch; ++e) {
+                Statistics.shuffleColumnsInplace(IMAGES, seeds.nextLong());
+            }
             epoch = firstEpoch;
             bestEpoch = firstEpoch - 1;
             // the same rule as everywhere else, read the other way round: what the loaded

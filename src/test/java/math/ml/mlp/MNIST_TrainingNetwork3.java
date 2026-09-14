@@ -117,6 +117,16 @@ public class MNIST_TrainingNetwork3 extends AbstractNetwork {
         int firstEpoch = 0;
         if (resume) {
             firstEpoch = net.resume("mnist_tn3", NUM_BATCHES_PER_EPOCH);
+            // the log counter is its own field, so it has to be moved too or the continued
+            // run reports epochs it already trained
+            epoch = firstEpoch;
+            // the pre-loop shuffle above supplies the first permutation; these are the ones the
+            // epochs already trained through, drawn from the same stream in the same order
+            for (int e = 0; e < firstEpoch; ++e) {
+                long replayed = seeds.nextLong();
+                Statistics.shuffleColumnsInplace(IMAGES, replayed);
+                Statistics.shuffleColumnsInplace(EXPECT, replayed);
+            }
             // what keep-best has to beat is the bundle that was just loaded, and its score is
             // only known by measuring it; from zero the next epoch would store whatever it scored
             maxValidationAccuracy = net.validationAccuracy();
