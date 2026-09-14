@@ -32,7 +32,7 @@ class ResidualBranchTest {
         // Sigmoid, not Relu: central differences are only valid on a smooth
         // function, and a step of H can flip a Relu across its kink. Relu's own
         // derivative is covered in ActivationTest.
-        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb1"), new BatchNorm(6), new Sigmoid());
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb1", 101L), new BatchNorm(6), new Sigmoid());
         assertInputGradient(layer, input(6, 5, 21L), input(6, 5, 22L), 3e-2);
     }
 
@@ -40,7 +40,7 @@ class ResidualBranchTest {
     void backwardMatchesNumericalInputGradientWithoutAnActivation() {
         // the branch above contains a layer that may mutate, this one does not, so
         // the two exercise the copied and the uncopied path through the same code
-        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb2"), new BatchNorm(6));
+        ResidualBranch layer = new ResidualBranch(new Hidden(6, 6, "rb2", 102L), new BatchNorm(6));
         assertInputGradient(layer, input(6, 5, 31L), input(6, 5, 32L), 3e-2);
     }
 

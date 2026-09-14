@@ -35,8 +35,8 @@ class ParallelBranchesTest {
         // Sigmoid rather than Relu, so the central differences stay on a smooth
         // function; see the note in ResidualBranchTest.
         ParallelBranches layer = new ParallelBranches(
-                List.of(new Hidden(6, 4, "p1"), new Sigmoid()),
-                List.of(new Hidden(6, 4, "p2")));
+                List.of(new Hidden(6, 4, "p1", 103L), new Sigmoid()),
+                List.of(new Hidden(6, 4, "p2", 104L)));
         assertInputGradient(layer, input(6, 5, 11L), input(8, 5, 12L), 3e-2);
     }
 
@@ -45,8 +45,8 @@ class ParallelBranchesTest {
         // branch 0 above contains a layer that may mutate, neither branch here does,
         // so the two exercise the copied and the uncopied path through the same code
         ParallelBranches layer = new ParallelBranches(
-                List.of(new Hidden(6, 4, "p3")),
-                List.of(new Hidden(6, 4, "p4")));
+                List.of(new Hidden(6, 4, "p3", 105L)),
+                List.of(new Hidden(6, 4, "p4", 106L)));
         assertInputGradient(layer, input(6, 5, 31L), input(8, 5, 32L), 3e-2);
     }
 

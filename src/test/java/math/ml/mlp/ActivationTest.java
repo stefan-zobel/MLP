@@ -19,9 +19,14 @@ import static math.ml.mlp.GradientCheck.assertInputGradient;
 import static math.ml.mlp.GradientCheck.input;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.lang.reflect.Field;
 
 import org.junit.jupiter.api.Test;
 
+import math.dl.GELU;
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
@@ -92,5 +97,58 @@ class ActivationTest {
         relu.setMode(NetworkMode.INFER);
         relu.forward(input(4, 3, 80L));
         assertNull(relu.backward(input(4, 3, 81L)));
+    }
+
+    // Above 2^18 elements the forward and backward loops are split across cores, and the
+    // fixtures elsewhere are all far too small to reach that path. A split that is off by
+    // one element, or that leaves a gap between two chunks, shows up here and nowhere else.
+    @Test
+    void theThreadedActivationPathIsExactlyTheSequentialOne() throws ReflectiveOperationException {
+        MatrixF x = Matrices.randomUniformF(512, 1024, -4.0f, 4.0f, 91L);
+        MatrixF g = Matrices.randomUniformF(512, 1024, -0.5f, 0.5f, 93L);
+        // without this the fixture would go on passing after someone raised the threshold
+        // past it, comparing the sequential path against itself and proving nothing
+        Field threshold = Activation.class.getDeclaredField("PARALLEL_THRESHOLD");
+        threshold.setAccessible(true);
+        assertTrue(x.getArrayUnsafe().length >= threshold.getInt(null), "the fixture no longer reaches the split");
+        Gelu gelu = new Gelu();
+        gelu.setMode(NetworkMode.TRAIN);
+
+        MatrixF forward = gelu.forward(x);
+        MatrixF backward = gelu.backward(g);
+
+        float[] in = x.getArrayUnsafe();
+        float[] grads = g.getArrayUnsafe();
+        float[] f = forward.getArrayUnsafe();
+        float[] b = backward.getArrayUnsafe();
+        for (int i = 0; i < in.length; ++i) {
+            assertEquals(Float.floatToRawIntBits(GELU.geluF(in[i])), Float.floatToRawIntBits(f[i]), "forward at " + i);
+            assertEquals(Float.floatToRawIntBits(grads[i] * GELU.dgeluF_dx(in[i])), Float.floatToRawIntBits(b[i]),
+                    "backward at " + i);
+        }
+    }
+
+    // The output buffer is reused across steps, so a changing batch size has to reallocate it.
+    // A validation pass at a different batch, or a final short batch, would otherwise read a
+    // stale buffer of the wrong length.
+    @Test
+    void aChangedShapeReallocatesTheReusedBuffer() {
+        Relu relu = new Relu();
+        relu.setMode(NetworkMode.TRAIN);
+
+        MatrixF wide = relu.forward(Matrices.randomUniformF(4, 6, 1.0f, 2.0f, 95L));
+        assertEquals(4, wide.numRows());
+        assertEquals(6, wide.numColumns());
+
+        MatrixF narrow = relu.forward(Matrices.randomUniformF(4, 2, 1.0f, 2.0f, 96L));
+        assertEquals(4, narrow.numRows());
+        assertEquals(2, narrow.numColumns());
+
+        MatrixF x = Matrices.randomUniformF(4, 2, 1.0f, 2.0f, 97L);
+        MatrixF again = relu.forward(x);
+        assertSame(narrow, again, "the buffer is reused while the shape holds");
+        for (int i = 0; i < x.getArrayUnsafe().length; ++i) {
+            assertEquals(x.getArrayUnsafe()[i], again.getArrayUnsafe()[i], "element " + i);
+        }
     }
 }
