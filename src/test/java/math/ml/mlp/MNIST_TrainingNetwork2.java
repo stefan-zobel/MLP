@@ -71,6 +71,8 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
 
         // pass this seed back as the first argument to repeat a run exactly
         long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        // continue a run that was stopped; the bundle comes from ./data/
+        boolean resume = args.length > 1 && Integer.parseInt(args[1]) != 0;
         System.out.println("seed: " + baseSeed);
         SplittableRandom seeds = new SplittableRandom(baseSeed);
 
@@ -80,16 +82,16 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         loss.registerLossCallback(net::onLossComputationCompleted);
 
         // He ahead of every ReLU, Glorot on the output layer, which feeds the loss directly
-        net.add(new Hidden(INPUT_SIZE, 768, "layer1", false, true, Init.HE, seeds.nextLong()));
-        net.add(new Dropout(dropoutRate / 3, seeds.nextLong())); // / 5 / 3
+        net.add(new Hidden(INPUT_SIZE, 768, "layer1", Init.HE, seeds.nextLong()));
+        net.add(new Dropout(dropoutRate / 3, "drop1", seeds.nextLong())); // / 5 / 3
         net.add(new Relu()); // 768
-        net.add(new Hidden(768, 384, "layer2", false, true, Init.HE, seeds.nextLong()));
-        net.add(new Dropout(dropoutRate, seeds.nextLong())); // / 4 / 2
+        net.add(new Hidden(768, 384, "layer2", Init.HE, seeds.nextLong()));
+        net.add(new Dropout(dropoutRate, "drop2", seeds.nextLong())); // / 4 / 2
         net.add(new Relu()); // 384
-        net.add(new Hidden(384, 256, "layer3", false, true, Init.HE, seeds.nextLong()));
-        net.add(new Dropout(dropoutRate, seeds.nextLong())); // / 2
+        net.add(new Hidden(384, 256, "layer3", Init.HE, seeds.nextLong()));
+        net.add(new Dropout(dropoutRate, "drop3", seeds.nextLong())); // / 2
         net.add(new Relu()); // 256
-        net.add(new Hidden(256, NUM_LABELS, "layer4", false, true, seeds.nextLong()));
+        net.add(new Hidden(256, NUM_LABELS, "layer4", seeds.nextLong()));
         // no dropout and no activation here: SoftmaxCrossEntropyLoss wants raw logits
         net.add(loss);
 
@@ -101,9 +103,28 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
         Statistics.shuffleColumnsInplace(EXPECT, seed);
 
         double maxValidationAccuracy = 0.0;
+        int firstEpoch = 0;
+        if (resume) {
+            firstEpoch = net.resume("mnist_tn2", NUM_BATCHES_PER_EPOCH);
+            // the log counter is its own field, so it has to be moved too or the continued
+            // run reports epochs it already trained
+            epoch = firstEpoch;
+            // the pre-loop shuffle above supplies the first permutation; these are the ones the
+            // epochs already trained through, drawn from the same stream in the same order
+            for (int e = 0; e < firstEpoch; ++e) {
+                long replayed = seeds.nextLong();
+                Statistics.shuffleColumnsInplace(IMAGES, replayed);
+                Statistics.shuffleColumnsInplace(EXPECT, replayed);
+            }
+            // what keep-best has to beat is the bundle that was just loaded, and its score is
+            // only known by measuring it; from zero the next epoch would store whatever it scored
+            maxValidationAccuracy = net.validationAccuracy();
+            System.out.printf("resuming at epoch %d, checkpoint accuracy %.6f%n", firstEpoch,
+                    maxValidationAccuracy);
+        }
 
         // train for up to NUM_EPOCHS epochs
-        for (int epochIdx = 0; epochIdx < NUM_EPOCHS; ++epochIdx) {
+        for (int epochIdx = firstEpoch; epochIdx < NUM_EPOCHS; ++epochIdx) {
             for (int b = 0; b < NUM_BATCHES_PER_EPOCH; ++b) {
                 int startCol = b * BATCH_SIZE;
                 MatrixF input = IMAGES.selectConsecutiveColumns(startCol, startCol + BATCH_SIZE - 1);
@@ -116,7 +137,7 @@ public class MNIST_TrainingNetwork2 extends AbstractNetwork {
             // keep-best: only the improved model reaches the disk
             if (validationAccuracy > maxValidationAccuracy) {
                 maxValidationAccuracy = validationAccuracy;
-                net.storeParameters();
+                net.storeParameters("mnist_tn2");
             }
             System.out.println("epoch " + epoch + "   : avg. accuracy: " + trainingAccuracy + "   : avg. loss: "
                     + avgTrainingLoss + "   : validation avg. accuracy: " + validationAccuracy + "   : max acc.: "

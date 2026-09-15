@@ -85,7 +85,7 @@ class HiddenTest {
         // the default must not move: every call site that predates Init keeps its scheme
         float bound = (float) Math.sqrt(6.0 / (IN + OUT));
         assertWithinBound(new Hidden(IN, OUT, "a", 29L).weights.value(), bound);
-        assertWithinBound(new Hidden(IN, OUT, "a", false, false, 29L).weights.value(), bound);
+        assertWithinBound(new Hidden(IN, OUT, "a", 29L).weights.value(), bound);
         assertWithinBound(new Hidden(IN, OUT, "a").weights.value(), bound);
     }
 

@@ -15,6 +15,10 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
@@ -141,21 +145,115 @@ public abstract class AbstractNetwork implements TrainableNetwork {
     }
 
     /**
-     * Persists the parameters of every layer that was constructed with storing
-     * enabled, and the optimizer state when the optimizer was given a name; layers
-     * without storable parameters do nothing.
+     * Writes every layer and the optimizer into one bundle at
+     * {@code ./checkpoints/<name>.zip}, which either appears whole or not at all.
      *
-     * <p>Call this explicitly from the training loop, typically only when the
-     * validation score improved. Inference deliberately does not persist.
+     * <p>Call this from the training loop, typically only when the validation score
+     * improved. Inference deliberately does not persist.
+     *
+     * @param name names the bundle, without the extension
      */
-    public void storeParameters() {
-        for (Layer layer : layers) {
-            layer.storeParameters();
+    public void storeParameters(String name) {
+        storeParameters(Paths.get(ParameterStore.STORE_DIR, name + ".zip"));
+    }
+
+    /**
+     * Writes every layer and the optimizer into the bundle at {@code file}.
+     *
+     * @param file where the bundle goes
+     */
+    public void storeParameters(Path file) {
+        try (ModelBundle.Writer out = ModelBundle.write(file, batchCount)) {
+            for (Layer layer : layers) {
+                // a layer that writes fewer entries than it has trainable matrices is leaving
+                // weights behind, and a model missing weights looks exactly like one that is not
+                List<Parameter> own = layer.parameters();
+                int before = out.entryCount();
+                layer.writeParameters(out);
+                int written = out.entryCount() - before;
+                if (written < own.size()) {
+                    throw new IllegalStateException(layer.getClass().getSimpleName() + " has "
+                            + own.size() + " trainable matrices and contributed " + written
+                            + " entries to the bundle");
+                }
+            }
+            if (optimizer != null) {
+                // one entry among the others, so that the moments cannot be a different age
+                // than the weights beside them
+                optimizer.writeTo(out);
+            }
+            out.finish();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        if (optimizer != null) {
-            // in the same call as the layers, so that the weights and the moments cannot be
-            // written at two different steps
-            optimizer.storeState();
+    }
+
+    /**
+     * Reads {@code ./data/<name>.zip} back into this network. Belongs after the last
+     * {@link #add(Layer)} and after {@link #optimizer(Optimizer)}, because every matrix
+     * it fills has to exist first.
+     *
+     * @param name the bundle, without the extension
+     * @return the step the bundle was written at
+     */
+    public int loadParameters(String name) {
+        return loadParameters(Paths.get(ParameterStore.LOAD_DIR, name + ".zip"));
+    }
+
+    /**
+     * Reads the bundle {@code name} and reports the epoch a run should continue at.
+     *
+     * <p>Measure the model this loaded before training the first continued epoch: a keep-best
+     * rule that starts from its initial value will store over a checkpoint that was better.
+     *
+     * @param name            the bundle in the load directory, without the extension
+     * @param batchesPerEpoch how many batches one epoch of this program trains
+     * @return the first epoch that has not been trained
+     */
+    public int resume(String name, int batchesPerEpoch) {
+        return epochOf(loadParameters(name), batchesPerEpoch);
+    }
+
+    /**
+     * Reads the bundle at {@code file} and reports the epoch a run should continue at.
+     *
+     * @param file            the bundle to read
+     * @param batchesPerEpoch how many batches one epoch of this program trains
+     * @return the first epoch that has not been trained
+     */
+    public int resume(Path file, int batchesPerEpoch) {
+        return epochOf(loadParameters(file), batchesPerEpoch);
+    }
+
+    private static int epochOf(int step, int batchesPerEpoch) {
+        if (batchesPerEpoch <= 0) {
+            throw new IllegalArgumentException("batchesPerEpoch must be positive, got " + batchesPerEpoch);
+        }
+        return step / batchesPerEpoch;
+    }
+
+    /**
+     * Reads the bundle at {@code file} back into this network.
+     *
+     * @param file the bundle to read
+     * @return the step the bundle was written at
+     */
+    public int loadParameters(Path file) {
+        try (ModelBundle.Reader in = ModelBundle.read(file)) {
+            int step = in.step();
+            for (Layer layer : layers) {
+                layer.readParameters(in);
+            }
+            if (optimizer != null) {
+                optimizer.readFrom(in, step);
+            }
+            // after the layers, so that a bundle of another architecture is reported as the
+            // entries nobody asked for rather than as one missing matrix
+            in.requireFullyRead();
+            batchCount = step;
+            return step;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 }

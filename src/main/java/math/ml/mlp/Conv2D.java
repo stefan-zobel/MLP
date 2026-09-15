@@ -15,12 +15,7 @@
  */
 package math.ml.mlp;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -42,10 +37,8 @@ public class Conv2D extends AbstractLayer {
     protected final Parameter kernels;
     /** The bias column, out x 1, one entry per output channel. */
     protected final Parameter biases;
-    /** Identifies the parameter files of this layer. */
+    /** Names the bundle entries of this layer; without a name it has none. */
     protected final String name;
-    /** Whether {@link #storeParameters()} writes anything. */
-    protected final boolean storeKernelsAndBiases;
 
     private final int inChannels;
     private final int outChannels;
@@ -73,11 +66,11 @@ public class Conv2D extends AbstractLayer {
      * @param inH         height of the input
      * @param inW         width of the input
      * @param kernel      edge length of the square kernel
-     * @param name        identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param name        names the bundle entries {@code <name>/kernels} and {@code <name>/biases}
      * @param seed        seed for the kernel draw
      */
     public Conv2D(int inChannels, int outChannels, int inH, int inW, int kernel, String name, long seed) {
-        this(inChannels, outChannels, inH, inW, kernel, 1, 0, name, false, false, Init.GLOROT, seed);
+        this(inChannels, outChannels, inH, inW, kernel, 1, 0, name, Init.GLOROT, seed);
     }
 
     /**
@@ -89,12 +82,12 @@ public class Conv2D extends AbstractLayer {
      * @param inH         height of the input
      * @param inW         width of the input
      * @param kernel      edge length of the square kernel
-     * @param name        identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param name        names the bundle entries {@code <name>/kernels} and {@code <name>/biases}
      * @param init        the kernel initialization scheme
      * @param seed        seed for the kernel draw
      */
     public Conv2D(int inChannels, int outChannels, int inH, int inW, int kernel, String name, Init init, long seed) {
-        this(inChannels, outChannels, inH, inW, kernel, 1, 0, name, false, false, init, seed);
+        this(inChannels, outChannels, inH, inW, kernel, 1, 0, name, init, seed);
     }
 
     /**
@@ -107,33 +100,12 @@ public class Conv2D extends AbstractLayer {
      * @param kernel      edge length of the square kernel
      * @param stride      step between neighboring patches
      * @param pad         zeros added on every side of the input
-     * @param name        identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param name        names the bundle entries {@code <name>/kernels} and {@code <name>/biases}
      * @param init        the kernel initialization scheme
      * @param seed        seed for the kernel draw
      */
     public Conv2D(int inChannels, int outChannels, int inH, int inW, int kernel, int stride, int pad, String name,
             Init init, long seed) {
-        this(inChannels, outChannels, inH, inW, kernel, stride, pad, name, false, false, init, seed);
-    }
-
-    /**
-     * The full form; use {@link Init#HE} when a ReLU or GELU follows.
-     *
-     * @param inChannels             channels of the input
-     * @param outChannels            channels of the output
-     * @param inH                    height of the input
-     * @param inW                    width of the input
-     * @param kernel                 edge length of the square kernel
-     * @param stride                 step between neighboring patches
-     * @param pad                    zeros added on every side of the input
-     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
-     * @param loadKernelsAndBiases   read the parameters from {@code ./data/} at construction
-     * @param storeKernelsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
-     * @param init                   the kernel initialization scheme
-     * @param seed                   seed for the kernel draw, unused when the parameters are loaded
-     */
-    public Conv2D(int inChannels, int outChannels, int inH, int inW, int kernel, int stride, int pad, String name,
-            boolean loadKernelsAndBiases, boolean storeKernelsAndBiases, Init init, long seed) {
         if (inChannels <= 0 || outChannels <= 0) {
             throw new IllegalArgumentException("channels must be positive, got " + inChannels + " and " + outChannels);
         }
@@ -160,23 +132,13 @@ public class Conv2D extends AbstractLayer {
         this.outH = spanH / stride + 1;
         this.outW = spanW / stride + 1;
         this.name = name;
-        this.storeKernelsAndBiases = storeKernelsAndBiases;
         int patchRows = inChannels * kernel * kernel;
-        MatrixF k;
-        MatrixF b;
-        if (loadKernelsAndBiases) {
-            k = load(ParameterStore.LOAD_DIR + "w_" + name);
-            b = load(ParameterStore.LOAD_DIR + "b_" + name);
-        } else {
-            // the canonical convolutional fan-in and fan-out: one kernel sees patchRows
-            // inputs and contributes to outChannels * kernel * kernel outputs
-            float bound = init.bound(patchRows, outChannels * kernel * kernel);
-            k = Matrices.randomUniformF(outChannels, patchRows, -bound, bound, seed);
-            b = Matrices.createF(outChannels, 1);
-        }
+        // the canonical convolutional fan-in and fan-out: one kernel sees patchRows
+        // inputs and contributes to outChannels * kernel * kernel outputs
+        float bound = init.bound(patchRows, outChannels * kernel * kernel);
         // weight decay applies to the kernels but not to the bias, the standard rule
-        kernels = new Parameter("kernels", k, true);
-        biases = new Parameter("biases", b, false);
+        kernels = new Parameter("kernels", Matrices.randomUniformF(outChannels, patchRows, -bound, bound, seed), true);
+        biases = new Parameter("biases", Matrices.createF(outChannels, 1), false);
     }
 
     /** Height of this layer's output. */
@@ -329,46 +291,17 @@ public class Conv2D extends AbstractLayer {
         }
     }
 
-    /** Writes the kernels if storing was enabled at construction time. */
-    public void storeKernels() {
-        if (storeKernelsAndBiases) {
-            store(ParameterStore.STORE_DIR + "w_" + name, kernels.value());
-        }
-    }
-
-    /** Writes the biases if storing was enabled at construction time. */
-    public void storeBiases() {
-        if (storeKernelsAndBiases) {
-            store(ParameterStore.STORE_DIR + "b_" + name, biases.value());
-        }
-    }
-
-    /**
-     * Persists both the kernels and the biases of this layer if the
-     * {@code storeKernelsAndBiases} flag was set at construction time.
-     */
     @Override
-    public void storeParameters() {
-        storeKernels();
-        storeBiases();
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.write(sink, name + "/kernels", kernels.value());
+        ParameterStore.write(sink, name + "/biases", biases.value());
     }
 
-    private MatrixF load(String path) {
-        try (FileInputStream fis = new FileInputStream(path)) {
-            return Matrices.deserializeF(fis);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    private void store(String path, MatrixF matrix) {
-        try {
-            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
-            try (FileOutputStream fos = new FileOutputStream(path)) {
-                Matrices.serializeF(matrix, fos);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.read(source, name + "/kernels", kernels.value());
+        ParameterStore.read(source, name + "/biases", biases.value());
     }
 }

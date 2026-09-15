@@ -15,20 +15,105 @@
  */
 package math.ml.mlp;
 
-/** The two directories every layer and the optimizer read from and write to. */
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+import net.jamu.matrix.Matrices;
+import net.jamu.matrix.MatrixF;
+
+/** Where a model bundle is read from and written to, and the two calls a layer makes. */
 final class ParameterStore {
 
     /**
-     * Curated parameters. Read-only from code, so that no training run can
-     * overwrite a set that was promoted here by hand.
+     * Curated models, and the data sets of the loaders. No training run writes a
+     * bundle here, so one promoted by hand stays what it was.
      */
     static final String LOAD_DIR = "./data/";
 
     /**
-     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR}
-     * manually once it has proven itself.
+     * Where training runs write. Promote a checkpoint to {@link #LOAD_DIR} manually
+     * once it has proven itself, which is now one file.
      */
     static final String STORE_DIR = "./checkpoints/";
+
+    /**
+     * Serializes one matrix into the entry {@code key}.
+     *
+     * @param sink   where the entry goes
+     * @param key    the entry name
+     * @param matrix the matrix to write
+     * @throws IOException if writing fails
+     */
+    static void write(ParameterSink sink, String key, MatrixF matrix) throws IOException {
+        try (OutputStream os = new BufferedOutputStream(sink.open(key))) {
+            Matrices.serializeF(matrix, os);
+        }
+    }
+
+    /**
+     * Reads the entry {@code key} into a matrix that already has the right shape,
+     * so that a bundle from a differently sized network is refused here.
+     *
+     * @param source where the entry comes from
+     * @param key    the entry name
+     * @param into   the matrix to fill
+     * @throws IOException if reading fails
+     */
+    static void read(ParameterSource source, String key, MatrixF into) throws IOException {
+        try (InputStream is = new BufferedInputStream(source.open(key))) {
+            into.setInplace(Matrices.deserializeF(is));
+        }
+    }
+
+    /**
+     * Refuses a layer that is asked to take part in a bundle without a name. Being
+     * nameless is legal until that moment; contributing nothing to a bundle is not,
+     * because a model missing some of its weights looks exactly like one that is not.
+     *
+     * @param name  the name of the layer, or null
+     * @param layer the layer, for the message
+     * @throws IllegalStateException if {@code name} is null
+     */
+    static void requireName(String name, Layer layer) {
+        if (name == null) {
+            throw new IllegalStateException(layer.getClass().getSimpleName()
+                    + " has state to persist but no name, so it cannot be part of a bundle");
+        }
+    }
+
+    /**
+     * Writes one count into the entry {@code key}. A long does not survive a float matrix,
+     * so it goes as its own eight bytes.
+     *
+     * @param sink  where the entry goes
+     * @param key   the entry name
+     * @param value the count to write
+     * @throws IOException if writing fails
+     */
+    static void writeLong(ParameterSink sink, String key, long value) throws IOException {
+        try (DataOutputStream out = new DataOutputStream(sink.open(key))) {
+            out.writeLong(value);
+        }
+    }
+
+    /**
+     * Reads back what {@link #writeLong} wrote.
+     *
+     * @param source where the entry comes from
+     * @param key    the entry name
+     * @return the count
+     * @throws IOException if reading fails
+     */
+    static long readLong(ParameterSource source, String key) throws IOException {
+        try (DataInputStream in = new DataInputStream(source.open(key))) {
+            return in.readLong();
+        }
+    }
 
     private ParameterStore() {
         throw new AssertionError();

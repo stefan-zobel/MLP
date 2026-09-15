@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -144,9 +146,16 @@ public class ResidualBranch extends AbstractLayer {
      * Delegates parameter persistence to all layers in the branch.
      */
     @Override
-    public void storeParameters() {
+    public void writeParameters(ParameterSink sink) throws IOException {
         for (Layer layer : branch) {
-            layer.storeParameters();
+            layer.writeParameters(sink);
+        }
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        for (Layer layer : branch) {
+            layer.readParameters(source);
         }
     }
 

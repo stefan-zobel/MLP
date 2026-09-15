@@ -27,9 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-
 import org.junit.jupiter.api.Test;
 
 import net.jamu.matrix.MatrixF;
@@ -136,7 +133,7 @@ class LayerNormTest {
 
     @Test
     void parametersSurviveAWriteReadRoundTrip() throws Exception {
-        LayerNorm original = new LayerNorm(FEATURES);
+        LayerNorm original = new LayerNorm(FEATURES, "probe");
         // the optimizer step is what moves gamma and beta at all; without it both
         // layers would still hold gamma 1 and beta 0 and the test would pass vacuously
         Sgd sgd = GradientCheck.sgdOver(original, 0.05f);
@@ -147,10 +144,10 @@ class LayerNormTest {
             sgd.step();
         }
 
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        original.writeParameters(buffer);
-        LayerNorm restored = new LayerNorm(FEATURES);
-        restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
+        MemoryBundle bundle = new MemoryBundle();
+        original.writeParameters(bundle.sink());
+        LayerNorm restored = new LayerNorm(FEATURES, "probe");
+        restored.readParameters(bundle.source());
 
         for (String name : new String[] { "gamma", "beta" }) {
             MatrixF a = value(original, name);
@@ -188,9 +185,13 @@ class LayerNormTest {
     }
 
     @Test
-    void storeParametersIsANoOpWithoutStoringEnabled() {
-        new LayerNorm(FEATURES).storeParameters();
-        new LayerNorm(FEATURES, 1e-5f).storeParameters();
+    void anUnnamedLayerCannotBeInABundle() {
+        MemoryBundle bundle = new MemoryBundle();
+        assertTrue(assertThrows(IllegalStateException.class, () -> new LayerNorm(FEATURES).writeParameters(bundle.sink()))
+                .getMessage().contains("LayerNorm"));
+        assertThrows(IllegalStateException.class,
+                () -> new LayerNorm(FEATURES, 1e-5f).readParameters(bundle.source()));
+        assertEquals(0, bundle.size());
     }
 
     private static double numericalParameterGradient(MatrixF x, MatrixF w, String name, int row) throws Exception {

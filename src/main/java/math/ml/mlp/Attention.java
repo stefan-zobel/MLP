@@ -15,12 +15,7 @@
  */
 package math.ml.mlp;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -52,10 +47,8 @@ public class Attention extends AbstractLayer {
     protected final Parameter[] values;
     /** Output projections, one per head, each dModel x dHead, summed into the result. */
     protected final Parameter[] outputs;
-    /** Identifies the parameter files of this layer. */
+    /** Names the bundle entries of this layer; without a name it has none. */
     protected final String name;
-    /** Whether {@link #storeParameters()} writes anything. */
-    protected final boolean storeProjections;
 
     private final int dModel;
     private final int seqLen;
@@ -86,10 +79,10 @@ public class Attention extends AbstractLayer {
      * @param dModel features per token
      * @param seqLen tokens per sample
      * @param heads  number of attention heads; must divide {@code dModel}
-     * @param name   identifies the parameter files of this layer
+     * @param name   names the bundle entries of this layer
      */
     public Attention(int dModel, int seqLen, int heads, String name) {
-        this(dModel, seqLen, heads, name, false, false, Init.GLOROT, ThreadLocalRandom.current().nextLong());
+        this(dModel, seqLen, heads, name, Init.GLOROT, ThreadLocalRandom.current().nextLong());
     }
 
     /**
@@ -98,27 +91,24 @@ public class Attention extends AbstractLayer {
      * @param dModel features per token
      * @param seqLen tokens per sample
      * @param heads  number of attention heads; must divide {@code dModel}
-     * @param name   identifies the parameter files of this layer
+     * @param name   names the bundle entries of this layer
      * @param seed   seed from which every projection draws
      */
     public Attention(int dModel, int seqLen, int heads, String name, long seed) {
-        this(dModel, seqLen, heads, name, false, false, Init.GLOROT, seed);
+        this(dModel, seqLen, heads, name, Init.GLOROT, seed);
     }
 
     /**
-     * The overloads without the flags neither load nor store.
+     * The overloads without an {@code init} use {@link Init#GLOROT}.
      *
-     * @param dModel           features per token
-     * @param seqLen           tokens per sample
-     * @param heads            number of attention heads; must divide {@code dModel}
-     * @param name             identifies the parameter files of this layer
-     * @param loadProjections  read the projections from {@code ./data/} at construction
-     * @param storeProjections let {@link #storeParameters()} write to {@code ./checkpoints/}
-     * @param init             the weight initialization scheme
-     * @param seed             seed from which every projection draws, unused when loading
+     * @param dModel features per token
+     * @param seqLen tokens per sample
+     * @param heads  number of attention heads; must divide {@code dModel}
+     * @param name   names the bundle entries of this layer
+     * @param init   the weight initialization scheme
+     * @param seed   seed from which every projection draws
      */
-    public Attention(int dModel, int seqLen, int heads, String name, boolean loadProjections, boolean storeProjections,
-            Init init, long seed) {
+    public Attention(int dModel, int seqLen, int heads, String name, Init init, long seed) {
         if (dModel <= 0 || seqLen <= 0 || heads <= 0) {
             throw new IllegalArgumentException(
                     "dModel " + dModel + ", seqLen " + seqLen + " and heads " + heads + " must all be positive");
@@ -132,7 +122,6 @@ public class Attention extends AbstractLayer {
         this.dHead = dModel / heads;
         this.scale = 1.0f / (float) Math.sqrt(dHead);
         this.name = name;
-        this.storeProjections = storeProjections;
         this.queries = new Parameter[heads];
         this.keys = new Parameter[heads];
         this.values = new Parameter[heads];
@@ -142,17 +131,15 @@ public class Attention extends AbstractLayer {
         float inBound = init.bound(dModel, dHead);
         float outBound = init.bound(dHead, dModel);
         for (int h = 0; h < heads; ++h) {
-            queries[h] = projection("q" + h, dHead, dModel, inBound, loadProjections, rnd.nextLong());
-            keys[h] = projection("k" + h, dHead, dModel, inBound, loadProjections, rnd.nextLong());
-            values[h] = projection("v" + h, dHead, dModel, inBound, loadProjections, rnd.nextLong());
-            outputs[h] = projection("o" + h, dModel, dHead, outBound, loadProjections, rnd.nextLong());
+            queries[h] = projection("q" + h, dHead, dModel, inBound, rnd.nextLong());
+            keys[h] = projection("k" + h, dHead, dModel, inBound, rnd.nextLong());
+            values[h] = projection("v" + h, dHead, dModel, inBound, rnd.nextLong());
+            outputs[h] = projection("o" + h, dModel, dHead, outBound, rnd.nextLong());
         }
     }
 
-    private Parameter projection(String suffix, int rows, int cols, float bound, boolean loading, long seed) {
-        MatrixF w = loading ? load(ParameterStore.LOAD_DIR + "w_" + name + "_" + suffix)
-                : Matrices.randomUniformF(rows, cols, -bound, bound, seed);
-        return new Parameter(suffix, w, true);
+    private static Parameter projection(String suffix, int rows, int cols, float bound, long seed) {
+        return new Parameter(suffix, Matrices.randomUniformF(rows, cols, -bound, bound, seed), true);
     }
 
     /** Every projection of every head, in the order query, key, value, output. */
@@ -359,39 +346,21 @@ public class Attention extends AbstractLayer {
         inputGrads = Matrices.createF(dModel, cols);
         batch = m;
     }
-
-    /** Persists every projection if storing was enabled at construction time. */
     @Override
-    public void storeParameters() {
-        if (!storeProjections) {
-            return;
-        }
-        try {
-            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        for (int h = 0; h < heads; ++h) {
-            store(queries[h]);
-            store(keys[h]);
-            store(values[h]);
-            store(outputs[h]);
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        // every projection of every head, named as parameters() names it, so that the
+        // two directions cannot drift apart
+        for (Parameter p : parameters()) {
+            ParameterStore.write(sink, name + "/" + p.name(), p.value());
         }
     }
 
-    private void store(Parameter p) {
-        try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "w_" + name + "_" + p.name())) {
-            Matrices.serializeF(p.value(), fos);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    private MatrixF load(String path) {
-        try (FileInputStream fis = new FileInputStream(path)) {
-            return Matrices.deserializeF(fis);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        for (Parameter p : parameters()) {
+            ParameterStore.read(source, name + "/" + p.name(), p.value());
         }
     }
 }

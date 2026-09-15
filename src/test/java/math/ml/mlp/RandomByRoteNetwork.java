@@ -52,6 +52,8 @@ public class RandomByRoteNetwork extends AbstractNetwork {
     public static void main(String[] args) {
         // pass this seed back as the first argument to repeat a run exactly
         long baseSeed = args.length > 0 ? Long.parseLong(args[0]) : new SecureRandom().nextLong();
+        // continue a run that was stopped; the bundle comes from ./data/
+        boolean resume = args.length > 1 && Integer.parseInt(args[1]) != 0;
         System.out.println("seed: " + baseSeed);
         SplittableRandom seeds = new SplittableRandom(baseSeed);
         assignRandomLabels(seeds);
@@ -85,9 +87,20 @@ public class RandomByRoteNetwork extends AbstractNetwork {
 
         net.optimizer(new Sgd(0.008f));
 
-        for (int i = 0; i < 10_000 && !stop; ++i) {
+        // no epochs here, so no resume(name, batchesPerEpoch) either: the batch counter in the
+        // bundle is the loop counter, and the run picks the loop up where it left off
+        int done = resume ? net.loadParameters("rote") : 0;
+        if (resume) {
+            System.out.println("resuming after " + done + " batches");
+        }
+
+        for (int i = done; i < 10_000 && !stop; ++i) {
             net.train(input, EXPECT);
         }
+
+        // whatever the loop reached is what gets kept: there is no held-out set here that
+        // could pick a better moment, and the point of this net is the one batch it learned
+        net.storeParameters("rote");
 
         System.out.println("\nDone.");
     }

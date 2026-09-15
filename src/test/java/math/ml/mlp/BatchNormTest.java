@@ -26,9 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-
 import org.junit.jupiter.api.Test;
 
 import net.jamu.matrix.Matrices;
@@ -133,7 +130,7 @@ class BatchNormTest {
     void parametersSurviveAWriteReadRoundTrip() throws Exception {
         int features = 6;
         int batch = 32;
-        BatchNorm original = new BatchNorm(features);
+        BatchNorm original = new BatchNorm(features, "probe");
         // train a little so gamma, beta and the running statistics all move away from
         // their initial values. Without the optimizer step this test would pass
         // vacuously, both layers still holding gamma 1 and beta 0.
@@ -145,11 +142,11 @@ class BatchNormTest {
             sgd.step();
         }
 
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        original.writeParameters(buffer);
+        MemoryBundle bundle = new MemoryBundle();
+        original.writeParameters(bundle.sink());
 
-        BatchNorm restored = new BatchNorm(features);
-        restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
+        BatchNorm restored = new BatchNorm(features, "probe");
+        restored.readParameters(bundle.source());
 
         for (String field : new String[] { "gamma", "beta", "runningMean", "runningVar" }) {
             MatrixF a = value(original, field);
@@ -164,7 +161,7 @@ class BatchNormTest {
     void aRestoredLayerInfersIdentically() throws Exception {
         int features = 5;
         int batch = 24;
-        BatchNorm original = new BatchNorm(features);
+        BatchNorm original = new BatchNorm(features, "probe");
         Sgd sgd = GradientCheck.sgdOver(original, 0.05f);
         for (int i = 0; i < 20; ++i) {
             original.setMode(NetworkMode.TRAIN);
@@ -173,10 +170,10 @@ class BatchNormTest {
             sgd.step();
         }
 
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        original.writeParameters(buffer);
-        BatchNorm restored = new BatchNorm(features);
-        restored.readParameters(new ByteArrayInputStream(buffer.toByteArray()));
+        MemoryBundle bundle = new MemoryBundle();
+        original.writeParameters(bundle.sink());
+        BatchNorm restored = new BatchNorm(features, "probe");
+        restored.readParameters(bundle.source());
 
         MatrixF x = input(features, 7, 301L);
         original.setMode(NetworkMode.INFER);
@@ -192,10 +189,13 @@ class BatchNormTest {
     }
 
     @Test
-    void storeParametersIsANoOpWithoutStoringEnabled() {
-        // the plain constructors must not touch the filesystem
-        new BatchNorm(4).storeParameters();
-        new BatchNorm(4, 1e-5f, 0.1f).storeParameters();
+    void anUnnamedLayerCannotBeInABundle() {
+        MemoryBundle bundle = new MemoryBundle();
+        assertTrue(assertThrows(IllegalStateException.class, () -> new BatchNorm(4).writeParameters(bundle.sink()))
+                .getMessage().contains("BatchNorm"));
+        assertThrows(IllegalStateException.class,
+                () -> new BatchNorm(4, 1e-5f, 0.1f).readParameters(bundle.source()));
+        assertEquals(0, bundle.size());
     }
     private static double numericalParameterGradient(int features, MatrixF x, MatrixF w, String name, int row)
             throws Exception {

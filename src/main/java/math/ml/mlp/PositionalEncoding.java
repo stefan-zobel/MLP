@@ -15,12 +15,7 @@
  */
 package math.ml.mlp;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -37,10 +32,8 @@ public class PositionalEncoding extends AbstractLayer {
 
     /** The position table, dModel x seqLen, one column per position. */
     protected final Parameter positions;
-    /** Identifies the parameter file of this layer. */
+    /** Names the bundle entry of this layer; without a name it has none. */
     protected final String name;
-    /** Whether {@link #storeParameters()} writes anything. */
-    protected final boolean storePositions;
 
     private final int dModel;
     private final int seqLen;
@@ -54,10 +47,10 @@ public class PositionalEncoding extends AbstractLayer {
      *
      * @param dModel features per token
      * @param seqLen tokens per sample
-     * @param name   identifies the parameter file {@code w_<name>}
+     * @param name   names the bundle entry {@code <name>/positions}
      */
     public PositionalEncoding(int dModel, int seqLen, String name) {
-        this(dModel, seqLen, name, false, false, ThreadLocalRandom.current().nextLong());
+        this(dModel, seqLen, name, ThreadLocalRandom.current().nextLong());
     }
 
     /**
@@ -65,43 +58,21 @@ public class PositionalEncoding extends AbstractLayer {
      *
      * @param dModel features per token
      * @param seqLen tokens per sample
-     * @param name   identifies the parameter file {@code w_<name>}
+     * @param name   names the bundle entry {@code <name>/positions}
      * @param seed   seed for the draw
      */
     public PositionalEncoding(int dModel, int seqLen, String name, long seed) {
-        this(dModel, seqLen, name, false, false, seed);
-    }
-
-    /**
-     * The overloads without the flags neither load nor store.
-     *
-     * @param dModel         features per token
-     * @param seqLen         tokens per sample
-     * @param name           identifies the parameter file {@code w_<name>}
-     * @param loadPositions  read the table from {@code ./data/} at construction
-     * @param storePositions let {@link #storeParameters()} write to {@code ./checkpoints/}
-     * @param seed           seed for the draw, unused when the table is loaded
-     */
-    public PositionalEncoding(int dModel, int seqLen, String name, boolean loadPositions, boolean storePositions,
-            long seed) {
         if (dModel <= 0 || seqLen <= 0) {
             throw new IllegalArgumentException("dModel " + dModel + " and seqLen " + seqLen + " must both be positive");
         }
         this.dModel = dModel;
         this.seqLen = seqLen;
         this.name = name;
-        this.storePositions = storePositions;
-        MatrixF p;
-        if (loadPositions) {
-            p = load(ParameterStore.LOAD_DIR + "w_" + name);
-        } else {
-            // the table is added to the activations rather than multiplied with them, so the
-            // fan-in rules of Init do not apply; this keeps it small against a unit-scale input
-            float bound = 1.0f / (float) Math.sqrt(dModel);
-            p = Matrices.randomUniformF(dModel, seqLen, -bound, bound, seed);
-        }
+        // the table is added to the activations rather than multiplied with them, so the
+        // fan-in rules of Init do not apply; this keeps it small against a unit-scale input
+        float bound = 1.0f / (float) Math.sqrt(dModel);
         // no weight decay, for the same reason a bias carries none
-        positions = new Parameter("positions", p, false);
+        positions = new Parameter("positions", Matrices.randomUniformF(dModel, seqLen, -bound, bound, seed), false);
     }
 
     /** The position table. */
@@ -165,29 +136,15 @@ public class PositionalEncoding extends AbstractLayer {
         output = Matrices.createF(dModel, m * seqLen);
         batch = m;
     }
-
-    /**
-     * Persists the position table if storing was enabled at construction time.
-     */
     @Override
-    public void storeParameters() {
-        if (storePositions) {
-            try {
-                Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
-                try (FileOutputStream fos = new FileOutputStream(ParameterStore.STORE_DIR + "w_" + name)) {
-                    Matrices.serializeF(positions.value(), fos);
-                }
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.write(sink, name + "/positions", positions.value());
     }
 
-    private MatrixF load(String path) {
-        try (FileInputStream fis = new FileInputStream(path)) {
-            return Matrices.deserializeF(fis);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.read(source, name + "/positions", positions.value());
     }
 }

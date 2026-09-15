@@ -15,12 +15,7 @@
  */
 package math.ml.mlp;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -34,20 +29,18 @@ public class Hidden extends AbstractLayer {
     protected final Parameter weights;
     /** The bias column, out x 1. */
     protected final Parameter biases;
-    /** Identifies the parameter files of this layer. */
+    /** Names the bundle entries of this layer; without a name it has none. */
     protected final String name;
-    /** Whether {@link #storeParameters()} writes anything. */
-    protected final boolean storeWeightsAndBiases;
 
     /**
      * Creates a layer with Glorot initialization from an unseeded draw.
      *
      * @param in   number of input features
      * @param out  number of output features
-     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param name names the bundle entries {@code <name>/weights} and {@code <name>/biases}
      */
     public Hidden(int in, int out, String name) {
-        this(in, out, name, false, false, ThreadLocalRandom.current().nextLong());
+        this(in, out, name, ThreadLocalRandom.current().nextLong());
     }
 
     /**
@@ -55,11 +48,11 @@ public class Hidden extends AbstractLayer {
      *
      * @param in   number of input features
      * @param out  number of output features
-     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param name names the bundle entries {@code <name>/weights} and {@code <name>/biases}
      * @param seed seed for the weight draw
      */
     public Hidden(int in, int out, String name, long seed) {
-        this(in, out, name, false, false, Init.GLOROT, seed);
+        this(in, out, name, Init.GLOROT, seed);
     }
 
     /**
@@ -68,73 +61,16 @@ public class Hidden extends AbstractLayer {
      *
      * @param in   number of input features
      * @param out  number of output features
-     * @param name identifies the parameter files {@code w_<name>} and {@code b_<name>}
+     * @param name names the bundle entries {@code <name>/weights} and {@code <name>/biases}
      * @param init the weight initialization scheme
      * @param seed seed for the weight draw
      */
     public Hidden(int in, int out, String name, Init init, long seed) {
-        this(in, out, name, false, false, init, seed);
-    }
-
-    /**
-     * Creates a layer with Glorot initialization from an unseeded draw.
-     *
-     * @param in                     number of input features
-     * @param out                    number of output features
-     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
-     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
-     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
-     */
-    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases) {
-        this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, ThreadLocalRandom.current().nextLong());
-    }
-
-    /**
-     * The overloads without a {@code seed} draw one, so a run is reproducible only
-     * if the seed is passed in.
-     *
-     * @param in                     number of input features
-     * @param out                    number of output features
-     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
-     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
-     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
-     * @param seed                   seed for the weight draw, unused when the parameters are loaded
-     */
-    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
-            long seed) {
-        this(in, out, name, loadWeightsAndBiases, storeWeightsAndBiases, Init.GLOROT, seed);
-    }
-
-    /**
-     * The overloads without an {@code init} use {@link Init#GLOROT}.
-     *
-     * @param in                     number of input features
-     * @param out                    number of output features
-     * @param name                   identifies the parameter files {@code w_<name>} and {@code b_<name>}
-     * @param loadWeightsAndBiases   read the parameters from {@code ./data/} at construction
-     * @param storeWeightsAndBiases  let {@link #storeParameters()} write to {@code ./checkpoints/}
-     * @param init                   the weight initialization scheme
-     * @param seed                   seed for the weight draw, unused when the parameters are loaded
-     */
-    public Hidden(int in, int out, String name, boolean loadWeightsAndBiases, boolean storeWeightsAndBiases,
-            Init init, long seed) {
         this.name = name;
-        this.storeWeightsAndBiases = storeWeightsAndBiases;
-        int i = in;
-        int j = out;
-        MatrixF w;
-        MatrixF b;
-        if (loadWeightsAndBiases) {
-            w = loadWeights();
-            b = loadBiases();
-        } else {
-            float bound = init.bound(i, j);
-            w = Matrices.randomUniformF(j, i, -bound, bound, seed);
-            b = Matrices.createF(j, 1);
-        }
+        float bound = init.bound(in, out);
         // weight decay applies to the matrix but not to the bias, the standard rule
-        weights = new Parameter("weights", w, true);
-        biases = new Parameter("biases", b, false);
+        weights = new Parameter("weights", Matrices.randomUniformF(out, in, -bound, bound, seed), true);
+        biases = new Parameter("biases", Matrices.createF(out, 1), false);
     }
 
     /** The weight matrix and the bias column. */
@@ -170,54 +106,17 @@ public class Hidden extends AbstractLayer {
         return inputErrJacobian;
     }
 
-    private MatrixF loadWeights() {
-        return load(ParameterStore.LOAD_DIR + "w_" + name);
-    }
-
-    private MatrixF loadBiases() {
-        return load(ParameterStore.LOAD_DIR + "b_" + name);
-    }
-
-    /** Writes the weights if storing was enabled at construction time. */
-    public void storeWeights() {
-        if (storeWeightsAndBiases) {
-            store(ParameterStore.STORE_DIR + "w_" + name, weights.value());
-        }
-    }
-
-    /** Writes the biases if storing was enabled at construction time. */
-    public void storeBiases() {
-        if (storeWeightsAndBiases) {
-            store(ParameterStore.STORE_DIR + "b_" + name, biases.value());
-        }
-    }
-
-    /**
-     * Persists both the weights and the biases of this layer if the
-     * {@code storeWeightsAndBiases} flag was set at construction time.
-     */
     @Override
-    public void storeParameters() {
-        storeWeights();
-        storeBiases();
+    public void writeParameters(ParameterSink sink) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.write(sink, name + "/weights", weights.value());
+        ParameterStore.write(sink, name + "/biases", biases.value());
     }
 
-    private MatrixF load(String name) {
-        try (FileInputStream fis = new FileInputStream(name)) {
-            return Matrices.deserializeF(fis);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    private void store(String path, MatrixF matrix) {
-        try {
-            Files.createDirectories(Paths.get(ParameterStore.STORE_DIR));
-            try (FileOutputStream fos = new FileOutputStream(path)) {
-                Matrices.serializeF(matrix, fos);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        ParameterStore.requireName(name, this);
+        ParameterStore.read(source, name + "/weights", weights.value());
+        ParameterStore.read(source, name + "/biases", biases.value());
     }
 }

@@ -135,6 +135,32 @@ public class AugmentedSetTest {
     }
 
     @Test
+    public void skippingLeavesTheGeneratorWhereRegeneratingWouldHave() {
+        AugmentedSet straight = set();
+        SplittableRandom a = new SplittableRandom(11L);
+        straight.regenerate(a);
+        straight.regenerate(a);
+        straight.regenerate(a);
+
+        AugmentedSet skipped = set();
+        SplittableRandom b = new SplittableRandom(11L);
+        skipped.skip(b);
+        skipped.skip(b);
+        skipped.regenerate(b);
+
+        assertArrayEquals(straight.images().getArrayUnsafe(), skipped.images().getArrayUnsafe());
+        assertArrayEquals(straight.labels().getArrayUnsafe(), skipped.labels().getArrayUnsafe());
+    }
+
+    @Test
+    public void skippingBuildsNothing() {
+        AugmentedSet set = set();
+        float[] untouched = set.images().getArrayUnsafe().clone();
+        set.skip(new SplittableRandom(17L));
+        assertArrayEquals(untouched, set.images().getArrayUnsafe());
+    }
+
+    @Test
     public void successivePassesDiffer() {
         AugmentedSet set = set();
         SplittableRandom rnd = new SplittableRandom(5L);

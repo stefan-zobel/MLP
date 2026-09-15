@@ -15,6 +15,8 @@
  */
 package math.ml.mlp;
 
+import java.io.IOException;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
@@ -46,7 +48,7 @@ public final class TransformerEncoder extends AbstractLayer {
 
     private TransformerEncoder(Builder b) {
         Conv2D patch = new Conv2D(b.channels, b.dModel, b.imageHeight, b.imageWidth, b.tile, b.tile, 0,
-                b.names + "patch", b.load, b.store, b.init, b.seeds.nextLong());
+                b.names + "patch", b.init, b.seeds.nextLong());
         seqLen = patch.outputHeight() * patch.outputWidth();
         dModel = b.dModel;
         int mlpWidth = b.mlpWidth > 0 ? b.mlpWidth : 4 * b.dModel;
@@ -54,21 +56,21 @@ public final class TransformerEncoder extends AbstractLayer {
         List<Layer> all = new ArrayList<>();
         all.add(new Unflatten(b.channels, b.imageHeight, b.imageWidth));
         all.add(patch);
-        all.add(new PositionalEncoding(b.dModel, seqLen, b.names + "pos", b.load, b.store, b.seeds.nextLong()));
+        all.add(new PositionalEncoding(b.dModel, seqLen, b.names + "pos", b.seeds.nextLong()));
         for (int i = 0; i < b.blocks; ++i) {
             // pre-norm: the normalization sits inside the branch, so the identity path runs
             // unnormalized from the patch projection all the way to the pooling
-            all.add(new ResidualBranch(new LayerNorm(b.dModel, b.names + "b" + i + "_ln1", b.load, b.store),
-                    new Attention(b.dModel, seqLen, b.heads, b.names + "b" + i + "_attn", b.load, b.store, b.init,
+            all.add(new ResidualBranch(new LayerNorm(b.dModel, b.names + "b" + i + "_ln1"),
+                    new Attention(b.dModel, seqLen, b.heads, b.names + "b" + i + "_attn", b.init,
                             b.seeds.nextLong())));
-            all.add(new ResidualBranch(new LayerNorm(b.dModel, b.names + "b" + i + "_ln2", b.load, b.store),
-                    new Hidden(b.dModel, mlpWidth, b.names + "b" + i + "_fc1", b.load, b.store, Init.HE,
+            all.add(new ResidualBranch(new LayerNorm(b.dModel, b.names + "b" + i + "_ln2"),
+                    new Hidden(b.dModel, mlpWidth, b.names + "b" + i + "_fc1", Init.HE,
                             b.seeds.nextLong()),
                     b.activation.get(),
-                    new Hidden(mlpWidth, b.dModel, b.names + "b" + i + "_fc2", b.load, b.store, b.init,
+                    new Hidden(mlpWidth, b.dModel, b.names + "b" + i + "_fc2", b.init,
                             b.seeds.nextLong())));
         }
-        all.add(new LayerNorm(b.dModel, b.names + "lnf", b.load, b.store));
+        all.add(new LayerNorm(b.dModel, b.names + "lnf"));
         all.add(new MeanPool(seqLen));
         layers = all;
     }
@@ -146,9 +148,16 @@ public final class TransformerEncoder extends AbstractLayer {
     }
 
     @Override
-    public void storeParameters() {
+    public void writeParameters(ParameterSink sink) throws IOException {
         for (Layer layer : layers) {
-            layer.storeParameters();
+            layer.writeParameters(sink);
+        }
+    }
+
+    @Override
+    public void readParameters(ParameterSource source) throws IOException {
+        for (Layer layer : layers) {
+            layer.readParameters(source);
         }
     }
 
@@ -166,8 +175,6 @@ public final class TransformerEncoder extends AbstractLayer {
         private Supplier<Layer> activation = Relu::new;
         private Init init = Init.GLOROT;
         private String names;
-        private boolean load;
-        private boolean store;
         private SplittableRandom seeds;
 
         private Builder() {
@@ -257,29 +264,11 @@ public final class TransformerEncoder extends AbstractLayer {
         }
 
         /**
-         * @param prefix prepended to every layer name, which is what namespaces the parameter files
+         * @param prefix prepended to every layer name, which is what namespaces the bundle entries
          * @return this builder
          */
         public Builder names(String prefix) {
             names = prefix;
-            return this;
-        }
-
-        /**
-         * @param read read the parameters from the load directory at construction
-         * @return this builder
-         */
-        public Builder load(boolean read) {
-            load = read;
-            return this;
-        }
-
-        /**
-         * @param write let {@code storeParameters()} write to the checkpoint directory
-         * @return this builder
-         */
-        public Builder store(boolean write) {
-            store = write;
             return this;
         }
 

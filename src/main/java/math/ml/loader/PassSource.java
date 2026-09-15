@@ -46,4 +46,17 @@ public interface PassSource {
      * @param rnd source of the order and of whatever else the pass draws
      */
     void regenerate(SplittableRandom rnd);
+
+    /**
+     * Consumes exactly what {@link #regenerate(SplittableRandom)} would consume and builds
+     * nothing, so that a run continued from a checkpoint can be put back where the
+     * uninterrupted one would have been.
+     *
+     * <p>Replaying the draws rather than counting them is not a convenience:
+     * {@code nextInt(bound)} rejects over-represented candidates, so how many values a pass
+     * takes is not a fixed number.
+     *
+     * @param rnd the generator to advance by one pass
+     */
+    void skip(SplittableRandom rnd);
 }

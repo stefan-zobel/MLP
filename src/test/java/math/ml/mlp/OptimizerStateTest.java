@@ -17,38 +17,26 @@ package math.ml.mlp;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import net.jamu.matrix.Matrices;
 import net.jamu.matrix.MatrixF;
 
 class OptimizerStateTest {
 
-    private static final String NAME = "optimizer_state_test";
-    private static final Path WRITTEN = Paths.get("./checkpoints/o_" + NAME);
-    private static final Path PROMOTED = Paths.get("./data/o_" + NAME);
-    private static final Path PARTIAL = Paths.get("./checkpoints/o_" + NAME + ".tmp");
     private static final float RATE = 0.01f;
 
-    @AfterEach
-    void removeWhatTheTestWrote() throws IOException {
-        Files.deleteIfExists(WRITTEN);
-        Files.deleteIfExists(PROMOTED);
-        Files.deleteIfExists(PARTIAL);
-    }
+    @TempDir
+    Path dir;
 
     @Test
     void adamResumesExactlyWhereItStopped() throws IOException {
@@ -58,16 +46,17 @@ class OptimizerStateTest {
         stepThrough(whole, straight, 1, 10);
 
         List<Parameter> before = twoParameters();
-        AbstractOptimizer first = new Adam(RATE).persistAs(NAME, true);
+        AbstractOptimizer first = new Adam(RATE);
         before.forEach(first::add);
         stepThrough(first, before, 1, 5);
-        first.storeState();
-        promote();
+        MemoryBundle bundle = new MemoryBundle();
+        first.writeTo(bundle.sink());
 
         List<Parameter> after = carriedOver(before);
-        AbstractOptimizer second = new Adam(RATE).persistAs(NAME, false);
+        AbstractOptimizer second = new Adam(RATE);
         after.forEach(second::add);
-        assertEquals(5, second.loadState());
+        second.readFrom(bundle.source(), 5);
+        assertEquals(5, second.steps());
         stepThrough(second, after, 6, 10);
 
         assertSameValues(straight, after);
@@ -81,16 +70,16 @@ class OptimizerStateTest {
         stepThrough(whole, straight, 1, 10);
 
         List<Parameter> before = twoParameters();
-        AbstractOptimizer first = new Sgd(RATE, 0.9f).persistAs(NAME, true);
+        AbstractOptimizer first = new Sgd(RATE, 0.9f);
         before.forEach(first::add);
         stepThrough(first, before, 1, 5);
-        first.storeState();
-        promote();
+        MemoryBundle bundle = new MemoryBundle();
+        first.writeTo(bundle.sink());
 
         List<Parameter> after = carriedOver(before);
-        AbstractOptimizer second = new Sgd(RATE, 0.9f).persistAs(NAME, false);
+        AbstractOptimizer second = new Sgd(RATE, 0.9f);
         after.forEach(second::add);
-        second.loadState();
+        second.readFrom(bundle.source(), 5);
         stepThrough(second, after, 6, 10);
 
         assertSameValues(straight, after);
@@ -100,17 +89,17 @@ class OptimizerStateTest {
     void plainSgdCarriesNothingButTheStepCounter() throws IOException {
         List<Integer> asked = new ArrayList<>();
         List<Parameter> before = twoParameters();
-        AbstractOptimizer first = new Sgd(recording(asked)).persistAs(NAME, true);
+        AbstractOptimizer first = new Sgd(recording(asked));
         before.forEach(first::add);
         stepThrough(first, before, 1, 5);
-        first.storeState();
-        promote();
+        MemoryBundle bundle = new MemoryBundle();
+        first.writeTo(bundle.sink());
 
         asked.clear();
         List<Parameter> after = carriedOver(before);
-        AbstractOptimizer second = new Sgd(recording(asked)).persistAs(NAME, false);
+        AbstractOptimizer second = new Sgd(recording(asked));
         after.forEach(second::add);
-        assertEquals(5, second.loadState());
+        second.readFrom(bundle.source(), 5);
         stepThrough(second, after, 6, 10);
 
         assertEquals(List.of(6, 7, 8, 9, 10), asked);
@@ -120,154 +109,139 @@ class OptimizerStateTest {
     void theResumedRunContinuesTheScheduleInsteadOfRepeatingIt() throws IOException {
         List<Integer> asked = new ArrayList<>();
         List<Parameter> before = twoParameters();
-        AbstractOptimizer first = new Adam(recording(asked), 0.0f).persistAs(NAME, true);
+        AbstractOptimizer first = new Adam(recording(asked), 0.0f);
         before.forEach(first::add);
         stepThrough(first, before, 1, 5);
         assertEquals(List.of(1, 2, 3, 4, 5), asked);
-        first.storeState();
-        promote();
+        MemoryBundle bundle = new MemoryBundle();
+        first.writeTo(bundle.sink());
 
         asked.clear();
-        AbstractOptimizer second = new Adam(recording(asked), 0.0f).persistAs(NAME, false);
+        AbstractOptimizer second = new Adam(recording(asked), 0.0f);
         carriedOver(before).forEach(second::add);
-        second.loadState();
+        second.readFrom(bundle.source(), 5);
         second.step();
 
         assertEquals(List.of(6), asked);
     }
 
     @Test
+    void theStepComesFromTheBundleAndNotFromTheEntry() throws IOException {
+        List<Parameter> params = twoParameters();
+        AbstractOptimizer first = new Adam(RATE);
+        params.forEach(first::add);
+        stepThrough(first, params, 1, 5);
+        MemoryBundle bundle = new MemoryBundle();
+        first.writeTo(bundle.sink());
+
+        AbstractOptimizer second = new Adam(RATE);
+        carriedOver(params).forEach(second::add);
+        // the entry holds no step of its own, so whatever the manifest says is what counts
+        second.readFrom(bundle.source(), 1128);
+
+        assertEquals(1128, second.steps());
+    }
+
+    @Test
     void theClippedStepCountSurvives() throws IOException {
         List<Parameter> before = twoParameters();
-        AbstractOptimizer first = new Adam(RATE).persistAs(NAME, true);
+        AbstractOptimizer first = new Adam(RATE);
         first.clipGradientNorm(1e-6f);
         before.forEach(first::add);
         stepThrough(first, before, 1, 5);
         assertEquals(5, first.clippedSteps());
-        first.storeState();
-        promote();
+        MemoryBundle bundle = new MemoryBundle();
+        first.writeTo(bundle.sink());
 
-        AbstractOptimizer second = new Adam(RATE).persistAs(NAME, false);
+        AbstractOptimizer second = new Adam(RATE);
         carriedOver(before).forEach(second::add);
-        second.loadState();
+        second.readFrom(bundle.source(), 5);
 
         assertEquals(5, second.clippedSteps());
     }
 
     @Test
     void stateWrittenByOneKindOfOptimizerIsRefusedByAnother() throws IOException {
-        storeFive(new Adam(RATE).persistAs(NAME, true));
+        MemoryBundle bundle = fiveStepsOf(new Adam(RATE));
 
-        AbstractOptimizer sgd = new Sgd(RATE, 0.9f).persistAs(NAME, false);
+        AbstractOptimizer sgd = new Sgd(RATE, 0.9f);
         twoParameters().forEach(sgd::add);
-        assertTrue(assertThrows(IllegalStateException.class, sgd::loadState).getMessage().contains("Adam"));
+        assertTrue(assertThrows(IllegalStateException.class, () -> sgd.readFrom(bundle.source(), 5)).getMessage()
+                .contains("Adam"));
     }
 
     @Test
     void aDifferentParameterCountIsRefused() throws IOException {
-        storeFive(new Adam(RATE).persistAs(NAME, true));
+        MemoryBundle bundle = fiveStepsOf(new Adam(RATE));
 
-        AbstractOptimizer narrow = new Adam(RATE).persistAs(NAME, false);
+        AbstractOptimizer narrow = new Adam(RATE);
         narrow.add(twoParameters().get(0));
-        assertThrows(IllegalStateException.class, narrow::loadState);
+        assertThrows(IllegalStateException.class, () -> narrow.readFrom(bundle.source(), 5));
     }
 
     @Test
     void aDifferentParameterShapeIsRefused() throws IOException {
-        storeFive(new Adam(RATE).persistAs(NAME, true));
+        MemoryBundle bundle = fiveStepsOf(new Adam(RATE));
 
-        AbstractOptimizer wider = new Adam(RATE).persistAs(NAME, false);
+        AbstractOptimizer wider = new Adam(RATE);
         wider.add(new Parameter("w", Matrices.createF(5, 3), true));
         wider.add(new Parameter("b", Matrices.createF(4, 1), false));
-        assertThrows(IllegalStateException.class, wider::loadState);
+        assertThrows(IllegalStateException.class, () -> wider.readFrom(bundle.source(), 5));
     }
 
     @Test
     void aChangedHyperparameterIsRefused() throws IOException {
-        storeFive(new Adam(RATE).persistAs(NAME, true));
+        MemoryBundle bundle = fiveStepsOf(new Adam(RATE));
 
-        AbstractOptimizer other = new Adam(LearningRateSchedule.constant(RATE), 0.0f, 0.8f, 0.999f, 1e-8f)
-                .persistAs(NAME, false);
+        AbstractOptimizer other = new Adam(LearningRateSchedule.constant(RATE), 0.0f, 0.8f, 0.999f, 1e-8f);
         twoParameters().forEach(other::add);
-        assertTrue(assertThrows(IllegalStateException.class, other::loadState).getMessage().contains("beta1"));
+        assertTrue(assertThrows(IllegalStateException.class, () -> other.readFrom(bundle.source(), 5)).getMessage()
+                .contains("beta1"));
     }
 
     @Test
     void aChangedMomentumIsRefused() throws IOException {
-        storeFive(new Sgd(RATE, 0.9f).persistAs(NAME, true));
+        MemoryBundle bundle = fiveStepsOf(new Sgd(RATE, 0.9f));
 
-        AbstractOptimizer other = new Sgd(RATE, 0.5f).persistAs(NAME, false);
+        AbstractOptimizer other = new Sgd(RATE, 0.5f);
         twoParameters().forEach(other::add);
-        assertTrue(assertThrows(IllegalStateException.class, other::loadState).getMessage().contains("momentum"));
+        assertTrue(assertThrows(IllegalStateException.class, () -> other.readFrom(bundle.source(), 5)).getMessage()
+                .contains("momentum"));
     }
 
     @Test
-    void loadingWithoutANameIsRefused() {
-        Adam adam = new Adam(RATE);
+    void aBundleWithoutAnOptimizerEntryIsReported() {
+        AbstractOptimizer adam = new Adam(RATE);
         twoParameters().forEach(adam::add);
-        assertThrows(IllegalStateException.class, adam::loadState);
-    }
 
-    @Test
-    void aMissingFileIsReportedWithItsPath() {
-        AbstractOptimizer adam = new Adam(RATE).persistAs(NAME, false);
-        twoParameters().forEach(adam::add);
-        assertTrue(assertThrows(IllegalStateException.class, adam::loadState).getMessage().contains("o_" + NAME));
-    }
-
-    @Test
-    void aFileThatIsNotOptimizerStateIsRefused() throws IOException {
-        Files.createDirectories(Paths.get("./data/"));
-        Files.write(PROMOTED, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
-
-        AbstractOptimizer adam = new Adam(RATE).persistAs(NAME, false);
-        twoParameters().forEach(adam::add);
-        assertThrows(IllegalStateException.class, adam::loadState);
-    }
-
-    @Test
-    void nothingIsWrittenWithoutANameOrWithoutTheFlag() throws IOException {
-        Adam unnamed = new Adam(RATE);
-        twoParameters().forEach(unnamed::add);
-        unnamed.storeState();
-        assertFalse(Files.exists(WRITTEN), "an optimizer without a name must write nothing");
-
-        AbstractOptimizer named = new Adam(RATE).persistAs(NAME, false);
-        twoParameters().forEach(named::add);
-        named.storeState();
-        assertFalse(Files.exists(WRITTEN), "the store flag has to work the way the one of a layer does");
-    }
-
-    @Test
-    void theHalfWrittenFileIsNotLeftBehind() throws IOException {
-        storeFive(new Adam(RATE).persistAs(NAME, true));
-
-        assertTrue(Files.exists(WRITTEN));
-        assertFalse(Files.exists(PARTIAL), "the state is written under a temporary name and then moved");
+        assertTrue(assertThrows(IllegalStateException.class, () -> adam.readFrom(new MemoryBundle().source(), 5)).getMessage()
+                .contains("optimizer"));
     }
 
     @Test
     void theNetworkWritesTheOptimizerAlongWithTheLayers() throws IOException {
         Net net = new Net();
-        net.add(new Hidden(4, 3, "optimizer_state_test_layer", false, false, 41L));
-        net.optimizer(new Adam(RATE).persistAs(NAME, true));
+        net.add(new Hidden(4, 3, "optimizer_state_test_layer", 41L));
+        net.optimizer(new Adam(RATE));
 
-        net.storeParameters();
+        Path file = dir.resolve("m.zip");
+        net.storeParameters(file);
 
-        assertTrue(Files.exists(WRITTEN), "storeParameters() has to reach the optimizer too");
+        try (ModelBundle.Reader in = ModelBundle.read(file)) {
+            in.open("optimizer").close();
+            in.open("optimizer_state_test_layer/weights").close();
+            in.open("optimizer_state_test_layer/biases").close();
+            in.requireFullyRead();
+        }
     }
 
-    private static void storeFive(AbstractOptimizer optimizer) throws IOException {
+    private static MemoryBundle fiveStepsOf(AbstractOptimizer optimizer) throws IOException {
         List<Parameter> params = twoParameters();
         params.forEach(optimizer::add);
         stepThrough(optimizer, params, 1, 5);
-        optimizer.storeState();
-        promote();
-    }
-
-    private static void promote() throws IOException {
-        Files.createDirectories(Paths.get("./data/"));
-        Files.copy(WRITTEN, PROMOTED, StandardCopyOption.REPLACE_EXISTING);
+        MemoryBundle bundle = new MemoryBundle();
+        optimizer.writeTo(bundle.sink());
+        return bundle;
     }
 
     private static List<Parameter> twoParameters() {
@@ -275,7 +249,7 @@ class OptimizerStateTest {
                 new Parameter("b", Matrices.randomUniformF(4, 1, -1.0f, 1.0f, 62L), false));
     }
 
-    // what a layer does when it loads its weights from the checkpoint, without any of the layers
+    // what a layer does when it reads its weights back, without any of the layers
     private static List<Parameter> carriedOver(List<Parameter> from) {
         List<Parameter> fresh = twoParameters();
         for (int i = 0; i < fresh.size(); ++i) {
