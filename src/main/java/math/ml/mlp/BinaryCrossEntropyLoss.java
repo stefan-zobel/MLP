@@ -90,7 +90,7 @@ public class BinaryCrossEntropyLoss extends AbstractLoss {
     private MatrixF computeGradients(MatrixF pred, MatrixF expect) {
         MatrixF denominator = pred.map(BinaryCrossEntropyLoss::clamp)
                 .hadamard(pred.map(p -> clamp(1.0f - p)));
-        return MatrixOps.divInplace(pred.minus(expect), denominator);
+        return pred.minus(expect).divBroadcastedVectorInplace(denominator);
     }
 
     /**
